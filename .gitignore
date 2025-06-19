@@ -1,0 +1,12 @@
+.idea
+.vscode
+build
+output
+*.egg-info
+*.so
+**/__pycache__
+weights/*
+pretrainedhttps://github.com/kohei771/geo.git
+data/Kitti/downsampled
+data/ModelNet/*.pkl
+miniconda.sh
