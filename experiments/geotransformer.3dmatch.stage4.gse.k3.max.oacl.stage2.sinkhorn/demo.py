@@ -3,6 +3,7 @@ import time
 
 import torch
 import numpy as np
+import torch.profiler
 
 from geotransformer.utils.data import registration_collate_fn_stack_mode
 from geotransformer.utils.torch import to_cuda, release_cuda
@@ -58,13 +59,18 @@ def main():
     model = create_model(cfg).cuda()
     state_dict = torch.load(args.weights)
     model.load_state_dict(state_dict["model"])
-    # prediction
-    start_time = time.time()
-    data_dict = to_cuda(data_dict)
-    output_dict = model(data_dict)
-    data_dict = release_cuda(data_dict)
-    output_dict = release_cuda(output_dict)
-    elapsed = time.time() - start_time
+    # prediction with profiler
+    with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True
+    ) as prof:
+        data_dict = to_cuda(data_dict)
+        output_dict = model(data_dict)
+        data_dict = release_cuda(data_dict)
+        output_dict = release_cuda(output_dict)
+    print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))
     # get results
     ref_points = output_dict["ref_points"]
     src_points = output_dict["src_points"]
