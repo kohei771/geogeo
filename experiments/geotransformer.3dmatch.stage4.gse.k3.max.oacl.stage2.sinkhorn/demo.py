@@ -1,6 +1,6 @@
 import argparse
 import time
-import torch.profiler
+import torch.profiler  # プロファイラは一時的にコメントアウト
 
 import torch
 import numpy as np
@@ -59,19 +59,15 @@ def main():
     model = create_model(cfg).cuda()
     state_dict = torch.load(args.weights)
     model.load_state_dict(state_dict["model"])
-    # prediction with profiler and timer
-    with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=True
-    ) as prof:
-        start_time = time.time()
-        data_dict = to_cuda(data_dict)
-        output_dict = model(data_dict)
-        data_dict = release_cuda(data_dict)
-        output_dict = release_cuda(output_dict)
-        elapsed = time.time() - start_time
+    # 正確な推論時間計測
+    torch.cuda.synchronize()
+    start_time = time.time()
+    data_dict = to_cuda(data_dict)
+    output_dict = model(data_dict)
+    torch.cuda.synchronize()
+    elapsed = time.time() - start_time
+    data_dict = release_cuda(data_dict)
+    output_dict = release_cuda(output_dict)
     # get results
     ref_points = output_dict["ref_points"]
     src_points = output_dict["src_points"]
@@ -94,7 +90,7 @@ def main():
     # compute error
     rre, rte = compute_registration_error(transform, estimated_transform)
     print(f"RRE(deg): {rre:.3f}, RTE(m): {rte:.3f}, Time(s): {elapsed:.3f}")
-    print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))
+    # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))  # プロファイラは必要に応じて
 
 
 if __name__ == "__main__":
