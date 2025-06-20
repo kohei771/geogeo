@@ -74,7 +74,24 @@ def main():
     transform1 = data_dict["transform"]
     rre1, rte1 = compute_registration_error(transform1, estimated_transform1)
     print(f"[WARMUP] RRE(deg): {rre1:.3f}, RTE(m): {rte1:.3f}, Time(s): {elapsed1:.3f}")
-    # 2回目（本番、プロファイラ有効）
+
+    # 2回目（計測のみ、プロファイラなし）
+    torch.cuda.synchronize()
+    start_time = time.time()
+    data_dict2 = to_cuda(data_dict)
+    output_dict2 = model(data_dict2)
+    torch.cuda.synchronize()
+    elapsed2 = time.time() - start_time
+    data_dict2 = release_cuda(data_dict2)
+    output_dict2 = release_cuda(output_dict2)
+    ref_points2 = output_dict2["ref_points"]
+    src_points2 = output_dict2["src_points"]
+    estimated_transform2 = output_dict2["estimated_transform"]
+    transform2 = data_dict["transform"]
+    rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
+    print(f"[RUN2] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
+
+    # 3回目（プロファイラ有効）
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         record_shapes=True,
@@ -83,32 +100,29 @@ def main():
     ) as prof:
         torch.cuda.synchronize()
         start_time = time.time()
-        data_dict2 = to_cuda(data_dict)
-        output_dict2 = model(data_dict2)
+        data_dict3 = to_cuda(data_dict)
+        output_dict3 = model(data_dict3)
         torch.cuda.synchronize()
-        elapsed2 = time.time() - start_time
-        data_dict2 = release_cuda(data_dict2)
-        output_dict2 = release_cuda(output_dict2)
-    ref_points2 = output_dict2["ref_points"]
-    src_points2 = output_dict2["src_points"]
-    estimated_transform2 = output_dict2["estimated_transform"]
-    transform2 = data_dict["transform"]
-    rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
-    print(f"[PROFILED] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
+        elapsed3 = time.time() - start_time
+        data_dict3 = release_cuda(data_dict3)
+        output_dict3 = release_cuda(output_dict3)
+    ref_points3 = output_dict3["ref_points"]
+    src_points3 = output_dict3["src_points"]
+    estimated_transform3 = output_dict3["estimated_transform"]
+    transform3 = data_dict["transform"]
+    rre3, rte3 = compute_registration_error(transform3, estimated_transform3)
+    print(f"[PROFILED] RRE(deg): {rre3:.3f}, RTE(m): {rte3:.3f}, Time(s): {elapsed3:.3f}")
     print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))
-    # visualization
-    ref_pcd = make_open3d_point_cloud(ref_points2)
+
+    # visualization（3回目の結果を使用）
+    ref_pcd = make_open3d_point_cloud(ref_points3)
     ref_pcd.estimate_normals()
     ref_pcd.paint_uniform_color(get_color("custom_yellow"))
-    src_pcd = make_open3d_point_cloud(src_points2)
+    src_pcd = make_open3d_point_cloud(src_points3)
     src_pcd.estimate_normals()
     src_pcd.paint_uniform_color(get_color("custom_blue"))
-    #draw_geometries(ref_pcd, src_pcd)
-    #save_geometries_as_image("before_registration.png", ref_pcd, src_pcd)
     save_pointclouds_as_2d_image("before_registration_2d.png", ref_pcd, src_pcd)
-    src_pcd = src_pcd.transform(estimated_transform2)
-    #draw_geometries(ref_pcd, src_pcd)
-    #save_geometries_as_image("after_registration.png", ref_pcd, src_pcd)
+    src_pcd = src_pcd.transform(estimated_transform3)
     save_pointclouds_as_2d_image("after_registration_2d.png", ref_pcd, src_pcd)
     # compute error
     rre, rte = compute_registration_error(transform, estimated_transform)
