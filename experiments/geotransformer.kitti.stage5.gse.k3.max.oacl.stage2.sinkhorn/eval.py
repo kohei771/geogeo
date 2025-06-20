@@ -131,11 +131,21 @@ def eval_one_epoch(args, cfg, logger):
             )
         elif args.method == 'svd':
             with torch.no_grad():
-                ref_corr_points = torch.from_numpy(ref_corr_points).cuda()
-                src_corr_points = torch.from_numpy(src_corr_points).cuda()
-                corr_scores = torch.from_numpy(corr_scores).cuda()
+                # まとめてGPU転送（すでにTensorなら転送しない）
+                if not torch.is_tensor(ref_corr_points):
+                    ref_corr_points_torch = torch.from_numpy(ref_corr_points).cuda(non_blocking=True)
+                else:
+                    ref_corr_points_torch = ref_corr_points.cuda(non_blocking=True)
+                if not torch.is_tensor(src_corr_points):
+                    src_corr_points_torch = torch.from_numpy(src_corr_points).cuda(non_blocking=True)
+                else:
+                    src_corr_points_torch = src_corr_points.cuda(non_blocking=True)
+                if not torch.is_tensor(corr_scores):
+                    corr_scores_torch = torch.from_numpy(corr_scores).cuda(non_blocking=True)
+                else:
+                    corr_scores_torch = corr_scores.cuda(non_blocking=True)
                 est_transform = weighted_procrustes(
-                    src_corr_points, ref_corr_points, corr_scores, return_transform=True
+                    src_corr_points_torch, ref_corr_points_torch, corr_scores_torch, return_transform=True
                 )
                 est_transform = est_transform.detach().cpu().numpy()
         else:
