@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import torch
 import numpy as np
@@ -46,33 +47,29 @@ def load_data(args):
 def main():
     parser = make_parser()
     args = parser.parse_args()
-
     cfg = make_cfg()
-
     # prepare data
     data_dict = load_data(args)
     neighbor_limits = [38, 36, 36, 38]  # default setting in 3DMatch
     data_dict = registration_collate_fn_stack_mode(
         [data_dict], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
-
     # prepare model
     model = create_model(cfg).cuda()
     state_dict = torch.load(args.weights)
     model.load_state_dict(state_dict["model"])
-
     # prediction
+    start_time = time.time()
     data_dict = to_cuda(data_dict)
     output_dict = model(data_dict)
     data_dict = release_cuda(data_dict)
     output_dict = release_cuda(output_dict)
-
+    elapsed = time.time() - start_time
     # get results
     ref_points = output_dict["ref_points"]
     src_points = output_dict["src_points"]
     estimated_transform = output_dict["estimated_transform"]
     transform = data_dict["transform"]
-
     # visualization
     ref_pcd = make_open3d_point_cloud(ref_points)
     ref_pcd.estimate_normals()
@@ -89,7 +86,7 @@ def main():
     save_pointclouds_as_2d_image("after_registration_2d.png", ref_pcd, src_pcd)
     # compute error
     rre, rte = compute_registration_error(transform, estimated_transform)
-    print(f"RRE(deg): {rre:.3f}, RTE(m): {rte:.3f}")
+    print(f"RRE(deg): {rre:.3f}, RTE(m): {rte:.3f}, Time(s): {elapsed:.3f}")
 
 
 if __name__ == "__main__":

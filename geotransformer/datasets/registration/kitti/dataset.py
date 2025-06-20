@@ -33,6 +33,7 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         augmentation_rotation=1.0,
         return_corr_indices=False,
         matching_radius=None,
+        use_intensity=False,  # intensity拡張用
     ):
         super(OdometryKittiPairDataset, self).__init__()
 
@@ -53,6 +54,7 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
             raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
 
         self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}.pkl'))
+        self.use_intensity = use_intensity
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
@@ -112,8 +114,15 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
 
         data_dict['ref_points'] = ref_points.astype(np.float32)
         data_dict['src_points'] = src_points.astype(np.float32)
-        data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
-        data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
+        # intensity対応: 点群shapeが(N, 4)ならintensityを使う
+        if self.use_intensity and ref_points.shape[1] >= 4:
+            data_dict['ref_feats'] = ref_points[:, 3:4].astype(np.float32)
+        else:
+            data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
+        if self.use_intensity and src_points.shape[1] >= 4:
+            data_dict['src_feats'] = src_points[:, 3:4].astype(np.float32)
+        else:
+            data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
         data_dict['transform'] = transform.astype(np.float32)
 
         return data_dict
