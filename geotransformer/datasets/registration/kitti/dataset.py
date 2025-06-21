@@ -54,6 +54,8 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
             raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
 
         self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}.pkl'))
+        # ここでseq_idが'00'のペアだけにフィルタ
+        self.metadata = [m for m in self.metadata if m.get('seq_id', None) == '00']
         self.use_intensity = use_intensity
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
