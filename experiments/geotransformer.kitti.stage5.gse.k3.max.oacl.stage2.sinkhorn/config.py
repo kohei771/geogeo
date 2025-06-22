@@ -36,7 +36,7 @@ _C.data.dataset_root = osp.join(_C.root_dir, 'data', 'Kitti')
 _C.train = edict()
 _C.train.batch_size = 1
 _C.train.num_workers = 8
-_C.train.point_limit = 30000
+_C.train.point_limit = 15000
 _C.train.use_augmentation = True
 _C.train.augmentation_noise = 0.01
 _C.train.augmentation_min_scale = 0.8
@@ -95,7 +95,7 @@ _C.model.num_sinkhorn_iterations = 100
 
 # model - Coarse Matching
 _C.coarse_matching = edict()
-_C.coarse_matching.num_targets = 128
+_C.coarse_matching.num_targets = 64
 _C.coarse_matching.overlap_threshold = 0.1
 _C.coarse_matching.num_correspondences = 128
 _C.coarse_matching.dual_normalization = True
