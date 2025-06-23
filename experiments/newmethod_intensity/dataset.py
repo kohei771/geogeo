@@ -1,4 +1,4 @@
-from geotransformer.datasets.registration.kitti.dataset import OdometryKittiPairDataset
+from geotransformer.datasets.registration.newmethod_intensity.dataset import NewMethodIntensityPairDataset
 from geotransformer.utils.data import (
     registration_collate_fn_stack_mode,
     calibrate_neighbors_stack_mode,
@@ -7,7 +7,7 @@ from geotransformer.utils.data import (
 
 
 def train_valid_data_loader(cfg, distributed):
-    train_dataset = OdometryKittiPairDataset(
+    train_dataset = NewMethodIntensityPairDataset(
         cfg.data.dataset_root,
         'train',
         point_limit=cfg.train.point_limit,
@@ -39,7 +39,7 @@ def train_valid_data_loader(cfg, distributed):
         distributed=distributed,
     )
 
-    valid_dataset = OdometryKittiPairDataset(
+    valid_dataset = NewMethodIntensityPairDataset(
         cfg.data.dataset_root,
         'val',
         point_limit=cfg.test.point_limit,
@@ -63,7 +63,7 @@ def train_valid_data_loader(cfg, distributed):
 
 
 def test_data_loader(cfg):
-    train_dataset = OdometryKittiPairDataset(
+    train_dataset = NewMethodIntensityPairDataset(
         cfg.data.dataset_root,
         'train',
         point_limit=cfg.train.point_limit,
@@ -83,7 +83,7 @@ def test_data_loader(cfg):
         cfg.backbone.init_radius,
     )
 
-    test_dataset = OdometryKittiPairDataset(
+    test_dataset = NewMethodIntensityPairDataset(
         cfg.data.dataset_root,
         'test',
         point_limit=cfg.test.point_limit,
