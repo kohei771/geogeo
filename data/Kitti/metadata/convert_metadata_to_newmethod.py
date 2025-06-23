@@ -7,6 +7,9 @@ def update_metadata_pkl(in_pkl, out_pkl, old_key, new_key):
         data = pickle.load(f)
     for entry in data:
         for k in ['pcd0', 'pcd1']:
+            # すでに newmethod/ で始まっていたら何もしない
+            if entry[k].startswith(new_key):
+                continue
             if entry[k].startswith(old_key):
                 entry[k] = entry[k].replace(old_key, new_key, 1)
     with open(out_pkl, 'wb') as f:
