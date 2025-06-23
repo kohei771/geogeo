@@ -1,17 +1,12 @@
-import os.path as osp
-import random
-
 import numpy as np
-import torch.utils.data
 
-from geotransformer.utils.common import load_pickle
-from geotransformer.utils.pointcloud import (
-    random_sample_rotation,
-    get_transform_from_rotation_translation,
-    get_rotation_translation_from_transform,
+from geotransformer.datasets.registration.newmethod_intensity.dataset import NewMethodIntensityPairDataset
+from geotransformer.utils.data import (
+    registration_collate_fn_stack_mode,
+    calibrate_neighbors_stack_mode,
+    build_dataloader_stack_mode,
 )
 from geotransformer.utils.registration import get_correspondences
-from geotransformer.datasets.registration.newmethod_intensity.dataset import NewMethodIntensityPairDataset
 
 
 class IntensityOnlyDataset(NewMethodIntensityPairDataset):
@@ -61,8 +56,8 @@ class IntensityOnlyDataset(NewMethodIntensityPairDataset):
 
 def train_valid_data_loader(cfg, distributed):
     train_dataset = IntensityOnlyDataset(
-        dataset_root=cfg.data.dataset_root,
-        subset='train',
+        cfg.data.dataset_root,
+        'train',
         point_limit=cfg.train.point_limit,
         use_augmentation=cfg.train.use_augmentation,
         augmentation_noise=cfg.train.augmentation_noise,
@@ -72,74 +67,132 @@ def train_valid_data_loader(cfg, distributed):
         augmentation_rotation=cfg.train.augmentation_rotation,
         use_intensity=cfg.train.use_intensity,
     )
-    
-    val_dataset = IntensityOnlyDataset(
-        dataset_root=cfg.data.dataset_root,
-        subset='val',
+    neighbor_limits = calibrate_neighbors_stack_mode(
+        train_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+    )
+    train_loader = build_dataloader_stack_mode(
+        train_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+        neighbor_limits,
+        batch_size=cfg.train.batch_size,
+        num_workers=cfg.train.num_workers,
+        shuffle=True,
+        distributed=distributed,
+    )
+
+    valid_dataset = IntensityOnlyDataset(
+        cfg.data.dataset_root,
+        'val',
         point_limit=cfg.train.point_limit,
         use_augmentation=False,
         use_intensity=cfg.train.use_intensity,
     )
-
-    if distributed:
-        train_sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
-        val_sampler = torch.utils.data.DistributedSampler(val_dataset, shuffle=False)
-    else:
-        train_sampler = None
-        val_sampler = None
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=cfg.train.batch_size,
-        shuffle=train_sampler is None,
-        sampler=train_sampler,
-        num_workers=cfg.train.num_workers,
-        collate_fn=lambda x: x,
-        pin_memory=True,
-        drop_last=True,
-    )
-    
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset,
+    valid_loader = build_dataloader_stack_mode(
+        valid_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+        neighbor_limits,
         batch_size=cfg.test.batch_size,
-        shuffle=False,
-        sampler=val_sampler,
         num_workers=cfg.test.num_workers,
-        collate_fn=lambda x: x,
-        pin_memory=True,
-        drop_last=False,
+        shuffle=False,
+        distributed=distributed,
     )
 
-    # Estimate neighbor limits
-    neighbor_limits = []
-    for stage_id in range(cfg.backbone.num_stages):
-        neighbor_limits.append(cfg.backbone.kernel_size)
-
-    return train_loader, val_loader, neighbor_limits
+    return train_loader, valid_loader, neighbor_limits
 
 
 def test_data_loader(cfg):
+    train_dataset = IntensityOnlyDataset(
+        cfg.data.dataset_root,
+        'train',
+        point_limit=cfg.train.point_limit,
+        use_augmentation=cfg.train.use_augmentation,
+        augmentation_noise=cfg.train.augmentation_noise,
+        augmentation_min_scale=cfg.train.augmentation_min_scale,
+        augmentation_max_scale=cfg.train.augmentation_max_scale,
+        augmentation_shift=cfg.train.augmentation_shift,
+        augmentation_rotation=cfg.train.augmentation_rotation,
+        use_intensity=cfg.train.use_intensity,
+    )
+    neighbor_limits = calibrate_neighbors_stack_mode(
+        train_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+    )
+
     test_dataset = IntensityOnlyDataset(
-        dataset_root=cfg.data.dataset_root,
-        subset='test',
+        cfg.data.dataset_root,
+        'test',
         point_limit=cfg.test.point_limit,
         use_augmentation=False,
         use_intensity=cfg.test.use_intensity,
     )
-
-    test_loader = torch.utils.data.DataLoader(
+    test_loader = build_dataloader_stack_mode(
         test_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+        neighbor_limits,
         batch_size=cfg.test.batch_size,
-        shuffle=False,
         num_workers=cfg.test.num_workers,
-        collate_fn=lambda x: x,
-        pin_memory=True,
-        drop_last=False,
+        shuffle=False,
+        distributed=distributed,
     )
 
-    # Estimate neighbor limits
-    neighbor_limits = []
-    for stage_id in range(cfg.backbone.num_stages):
-        neighbor_limits.append(cfg.backbone.kernel_size)
+    return test_loader, neighbor_limits
+
+
+def test_data_loader(cfg):
+    train_dataset = IntensityOnlyDataset(
+        cfg.data.dataset_root,
+        'train',
+        point_limit=cfg.train.point_limit,
+        use_augmentation=cfg.train.use_augmentation,
+        augmentation_noise=cfg.train.augmentation_noise,
+        augmentation_min_scale=cfg.train.augmentation_min_scale,
+        augmentation_max_scale=cfg.train.augmentation_max_scale,
+        augmentation_shift=cfg.train.augmentation_shift,
+        augmentation_rotation=cfg.train.augmentation_rotation,
+        use_intensity=cfg.train.use_intensity,
+    )
+    neighbor_limits = calibrate_neighbors_stack_mode(
+        train_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+    )
+
+    test_dataset = IntensityOnlyDataset(
+        cfg.data.dataset_root,
+        'test',
+        point_limit=cfg.test.point_limit,
+        use_augmentation=False,
+        use_intensity=cfg.test.use_intensity,
+    )
+    test_loader = build_dataloader_stack_mode(
+        test_dataset,
+        registration_collate_fn_stack_mode,
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+        neighbor_limits,
+        batch_size=cfg.test.batch_size,
+        num_workers=cfg.test.num_workers,
+        shuffle=False,
+        distributed=False,
+    )
 
     return test_loader, neighbor_limits
