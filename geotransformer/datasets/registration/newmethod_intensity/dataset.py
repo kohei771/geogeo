@@ -108,13 +108,13 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
 
         data_dict['ref_points'] = ref_points.astype(np.float32)
         data_dict['src_points'] = src_points.astype(np.float32)
-        # intensity対応: 点群shapeが(N, 4)ならintensityを使う
+        # intensity対応: 点群shapeが(N, 4)なら(x, y, z, intensity)全てを使う
         if self.use_intensity and ref_points.shape[1] >= 4:
-            data_dict['ref_feats'] = ref_points[:, 3:4].astype(np.float32)
+            data_dict['ref_feats'] = ref_points[:, :4].astype(np.float32)
         else:
             data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
         if self.use_intensity and src_points.shape[1] >= 4:
-            data_dict['src_feats'] = src_points[:, 3:4].astype(np.float32)
+            data_dict['src_feats'] = src_points[:, :4].astype(np.float32)
         else:
             data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
         data_dict['transform'] = transform.astype(np.float32)
