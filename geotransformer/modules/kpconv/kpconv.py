@@ -52,6 +52,7 @@ class KPConv(nn.Module):
 
         # Initialize weights
         self.weights = nn.Parameter(torch.zeros(self.kernel_size, in_channels, out_channels))
+        print(f"[DEBUG] KPConv init: in_channels={in_channels}, weights.shape={self.weights.shape}")
         if bias:
             self.bias = nn.Parameter(torch.zeros(self.out_channels))
         else:
@@ -126,8 +127,8 @@ class KPConv(nn.Module):
         format_string += 'kernel_size: {}'.format(self.kernel_size)
         format_string += ', in_channels: {}'.format(self.in_channels)
         format_string += ', out_channels: {}'.format(self.out_channels)
-        format_string += ', radius: {:g}'.format(self.radius)
-        format_string += ', sigma: {:g}'.format(self.sigma)
+        format_string += ', radius: {:g}'.format self.radius)
+        format_string += ', sigma: {:g}'.format self.sigma)
         format_string += ', bias: {}'.format(self.bias is not None)
         format_string += ')'
         return format_string
