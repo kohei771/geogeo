@@ -82,6 +82,9 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
 
     def _load_point_cloud(self, file_name):
         points = np.load(file_name)
+        if points.shape[1] == 3 and self.use_intensity:
+            # intensity列がなければダミーで1.0を追加
+            points = np.concatenate([points, np.ones((points.shape[0], 1), dtype=points.dtype)], axis=1)
         if self.point_limit is not None and points.shape[0] > self.point_limit:
             indices = np.random.permutation(points.shape[0])[: self.point_limit]
             points = points[indices]
