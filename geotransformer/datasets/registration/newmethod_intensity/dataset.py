@@ -47,7 +47,8 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
         if self.return_corr_indices and self.matching_radius is None:
             raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
 
-        self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}.pkl'))
+        # メタデータを newmethod 用に切り替え
+        self.metadata = load_pickle(osp.join(self.dataset_root, '..', 'metadata', f'{subset}_newmethod.pkl'))
         self.use_intensity = use_intensity
 
     def _augment_point_cloud(self, ref_points, src_points, transform):

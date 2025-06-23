@@ -30,7 +30,7 @@ ensure_dir(_C.feature_dir)
 
 # data
 _C.data = edict()
-_C.data.dataset_root = osp.join(_C.root_dir, 'data', 'Kitti')
+_C.data.dataset_root = osp.join(_C.root_dir, 'data', 'Kitti', 'newmethod')
 
 # intensity拡張用の設定
 _C.use_intensity = True  # Trueで(x, y, z, intensity)、Falseで(x, y, z)のみ
