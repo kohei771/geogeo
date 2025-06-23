@@ -13,7 +13,7 @@ def update_metadata_pkl(in_pkl, out_pkl, old_key, new_key):
         pickle.dump(data, f)
 
 if __name__ == '__main__':
-    meta_dir = 'data/Kitti/metadata'
+    meta_dir = '.'
     old_key = 'downsampled/'
     new_key = 'newmethod/'
     for split in ['train', 'val', 'test']:
