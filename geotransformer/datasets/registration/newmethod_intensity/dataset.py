@@ -81,6 +81,12 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
         transform = get_transform_from_rotation_translation(rotation, translation)
         return ref_points, src_points, transform
 
+    def _get_pcd_path(self, pcd_relpath):
+        # pcd_relpath: 'newmethod/00/000011.npy' → '00/000011.npy'
+        if pcd_relpath.startswith('newmethod/'):
+            pcd_relpath = pcd_relpath[len('newmethod/'):]
+        return osp.join(self.dataset_root, pcd_relpath)
+
     def _load_point_cloud(self, file_name):
         points = np.load(file_name)
         if points.shape[1] == 3 and self.use_intensity:
@@ -99,8 +105,8 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
         data_dict['ref_frame'] = metadata['frame0']
         data_dict['src_frame'] = metadata['frame1']
 
-        ref_points = self._load_point_cloud(osp.join(self.dataset_root, metadata['pcd0']))
-        src_points = self._load_point_cloud(osp.join(self.dataset_root, metadata['pcd1']))
+        ref_points = self._load_point_cloud(self._get_pcd_path(metadata['pcd0']))
+        src_points = self._load_point_cloud(self._get_pcd_path(metadata['pcd1']))
         transform = metadata['transform']
 
         if self.use_augmentation:
