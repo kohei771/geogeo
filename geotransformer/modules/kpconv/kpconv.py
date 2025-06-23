@@ -82,16 +82,26 @@ class KPConv(nn.Module):
 
         Args:
             s_feats (Tensor): (N, C_in)
-            q_points (Tensor): (M, 3)
-            s_points (Tensor): (N, 3)
+            q_points (Tensor): (M, 3) or (M, 4)
+            s_points (Tensor): (N, 3) or (N, 4)
             neighbor_indices (LongTensor): (M, H)
 
         Returns:
             q_feats (Tensor): (M, C_out)
         """
-        s_points = torch.cat([s_points, torch.zeros_like(s_points[:1, :]) + self.inf], 0)  # (N, 3) -> (N+1, 3)
-        neighbors = index_select(s_points, neighbor_indices, dim=0)  # (N+1, 3) -> (M, H, 3)
-        neighbors = neighbors - q_points.unsqueeze(1)  # (M, H, 3)
+        # s_points, q_points: (N, 3) or (N, 4) → (N, 3)
+        if s_points.shape[-1] > 3:
+            s_points_xyz = s_points[..., :3]
+        else:
+            s_points_xyz = s_points
+        if q_points.shape[-1] > 3:
+            q_points_xyz = q_points[..., :3]
+        else:
+            q_points_xyz = q_points
+
+        s_points_xyz = torch.cat([s_points_xyz, torch.zeros_like(s_points_xyz[:1, :]) + self.inf], 0)  # (N, 3) -> (N+1, 3)
+        neighbors = index_select(s_points_xyz, neighbor_indices, dim=0)  # (N+1, 3) -> (M, H, 3)
+        neighbors = neighbors - q_points_xyz.unsqueeze(1)  # (M, H, 3)
 
         # Get Kernel point influences
         neighbors = neighbors.unsqueeze(2)  # (M, H, 3) -> (M, H, 1, 3)
