@@ -1,21 +1,11 @@
-import os.path as osp
 import pickle
 
-def print_unique_prefixes(pkl_path, key='pcd0'):
-    with open(pkl_path, 'rb') as f:
-        data = pickle.load(f)
-    prefixes = set()
-    for entry in data:
-        for k in ['pcd0', 'pcd1']:
-            path = entry[k]
-            # 先頭3階層くらいまで
-            parts = path.split('/')
-            prefix = '/'.join(parts[:3])
-            prefixes.add(prefix)
-    print(f"{pkl_path} unique prefixes:")
-    for p in sorted(prefixes):
-        print(p)
+with open('train_newmethod.pkl', 'rb') as f:
+    data = pickle.load(f)
 
-if __name__ == '__main__':
-    for split in ['train', 'val', 'test']:
-        print_unique_prefixes(f'{split}.pkl')
+# 先頭5件だけ表示
+for i, entry in enumerate(data[:5]):
+    print(f"Sample {i}:")
+    print("  pcd0:", entry['pcd0'])
+    print("  pcd1:", entry['pcd1'])
+    # 他のキーも見たい場合は print(entry.keys())
