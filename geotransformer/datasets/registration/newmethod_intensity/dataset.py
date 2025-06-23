@@ -53,32 +53,44 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
-        # add gaussian noise
-        ref_points = ref_points + (np.random.rand(ref_points.shape[0], 3) - 0.5) * self.augmentation_noise
-        src_points = src_points + (np.random.rand(src_points.shape[0], 3) - 0.5) * self.augmentation_noise
+        # xyz/intensity分離
+        ref_xyz, ref_intensity = ref_points[:, :3], ref_points[:, 3:] if ref_points.shape[1] > 3 else None
+        src_xyz, src_intensity = src_points[:, :3], src_points[:, 3:] if src_points.shape[1] > 3 else None
+        # add gaussian noise (xyzのみ)
+        ref_xyz = ref_xyz + (np.random.rand(ref_xyz.shape[0], 3) - 0.5) * self.augmentation_noise
+        src_xyz = src_xyz + (np.random.rand(src_xyz.shape[0], 3) - 0.5) * self.augmentation_noise
         # random rotation
         aug_rotation = random_sample_rotation(self.augmentation_rotation)
         if random.random() > 0.5:
-            ref_points = np.matmul(ref_points, aug_rotation.T)
+            ref_xyz = np.matmul(ref_xyz, aug_rotation.T)
             rotation = np.matmul(aug_rotation, rotation)
             translation = np.matmul(aug_rotation, translation)
         else:
-            src_points = np.matmul(src_points, aug_rotation.T)
+            src_xyz = np.matmul(src_xyz, aug_rotation.T)
             rotation = np.matmul(rotation, aug_rotation.T)
         # random scaling
         scale = random.random()
         scale = self.augmentation_min_scale + (self.augmentation_max_scale - self.augmentation_min_scale) * scale
-        ref_points = ref_points * scale
-        src_points = src_points * scale
+        ref_xyz = ref_xyz * scale
+        src_xyz = src_xyz * scale
         translation = translation * scale
         # random shift
         ref_shift = np.random.uniform(-self.augmentation_shift, self.augmentation_shift, 3)
         src_shift = np.random.uniform(-self.augmentation_shift, self.augmentation_shift, 3)
-        ref_points = ref_points + ref_shift
-        src_points = src_points + src_shift
+        ref_xyz = ref_xyz + ref_shift
+        src_xyz = src_xyz + src_shift
         translation = -np.matmul(src_shift[None, :], rotation.T) + translation + ref_shift
         # compose transform from rotation and translation
         transform = get_transform_from_rotation_translation(rotation, translation)
+        # intensityを戻す
+        if ref_intensity is not None:
+            ref_points = np.concatenate([ref_xyz, ref_intensity], axis=1)
+        else:
+            ref_points = ref_xyz
+        if src_intensity is not None:
+            src_points = np.concatenate([src_xyz, src_intensity], axis=1)
+        else:
+            src_points = src_xyz
         return ref_points, src_points, transform
 
     def _get_pcd_path(self, pcd_relpath):
