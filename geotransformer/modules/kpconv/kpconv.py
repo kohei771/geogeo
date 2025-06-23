@@ -128,7 +128,7 @@ class KPConv(nn.Module):
         format_string += ', in_channels: {}'.format(self.in_channels)
         format_string += ', out_channels: {}'.format(self.out_channels)
         format_string += ', radius: {:g}'.format(self.radius)
-        format_string += ', sigma: {:g}'.format self.sigma)
+        format_string += ', sigma: {:g}'.format(self.sigma)
         format_string += ', bias: {}'.format(self.bias is not None)
         format_string += ')'
         return format_string
