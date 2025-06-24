@@ -24,10 +24,10 @@ class NewMethod3PairDataset(NewMethodIntensityPairDataset):
         data_dict['ref_frame'] = metadata['frame0']
         data_dict['src_frame'] = metadata['frame1']
 
-        # Load point cloud and cast to float32 early to save memory
-        ref_points_with_intensity = self._load_point_cloud(self._get_pcd_path(metadata['pcd0'])).astype(np.float32)
-        src_points_with_intensity = self._load_point_cloud(self._get_pcd_path(metadata['pcd1'])).astype(np.float32)
-        transform = metadata['transform'].astype(np.float32)
+        # Load point cloud using parent's method, which handles path and point limit
+        ref_points_with_intensity = self._load_point_cloud(self._get_pcd_path(metadata['pcd0']))
+        src_points_with_intensity = self._load_point_cloud(self._get_pcd_path(metadata['pcd1']))
+        transform = metadata['transform']
 
         if self.use_augmentation:
             ref_points_with_intensity, src_points_with_intensity, transform = self._augment_point_cloud(
@@ -46,22 +46,22 @@ class NewMethod3PairDataset(NewMethodIntensityPairDataset):
         src_xyz = src_points_with_intensity[:, :3]
         
         # Ensure intensity exists, otherwise use 1.0
-        ref_intensity = ref_points_with_intensity[:, 3:4] if ref_points_with_intensity.shape[1] >= 4 else np.ones_like(ref_points_with_intensity[:, :1], dtype=np.float32)
-        src_intensity = src_points_with_intensity[:, 3:4] if src_points_with_intensity.shape[1] >= 4 else np.ones_like(src_points_with_intensity[:, :1], dtype=np.float32)
+        ref_intensity = ref_points_with_intensity[:, 3:4] if ref_points_with_intensity.shape[1] >= 4 else np.ones_like(ref_points_with_intensity[:, :1])
+        src_intensity = src_points_with_intensity[:, 3:4] if src_points_with_intensity.shape[1] >= 4 else np.ones_like(src_points_with_intensity[:, :1])
 
-        # Weight coordinates by intensity (in-place to save memory)
-        np.multiply(ref_xyz, ref_intensity, out=ref_xyz)
-        np.multiply(src_xyz, src_intensity, out=src_xyz)
+        # Weight coordinates by intensity
+        ref_weighted_xyz = ref_xyz * ref_intensity
+        src_weighted_xyz = src_xyz * src_intensity
 
         # Set weighted coordinates as 'points'
-        data_dict['ref_points'] = ref_xyz
-        data_dict['src_points'] = src_xyz
+        data_dict['ref_points'] = ref_weighted_xyz.astype(np.float32)
+        data_dict['src_points'] = src_weighted_xyz.astype(np.float32)
 
         # Set dummy features
         data_dict['ref_feats'] = np.ones((ref_points_with_intensity.shape[0], 1), dtype=np.float32)
         data_dict['src_feats'] = np.ones((src_points_with_intensity.shape[0], 1), dtype=np.float32)
 
-        data_dict['transform'] = transform
+        data_dict['transform'] = transform.astype(np.float32)
         
         return data_dict
 
