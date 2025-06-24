@@ -95,13 +95,16 @@ def main():
     # 2回目（スーパーポイント100点ずつサンプリングver）
     import copy
     import numpy as np
-    data_dict_sample = copy.deepcopy(data_dict)
-    # ref_points, src_points, ref_feats, src_feats だけ100点サンプリング
+    data_dict_sample = copy.deepcopy(load_data(args))  # collate前のdictを使う
     for key in ["ref_points", "src_points", "ref_feats", "src_feats"]:
         arr = data_dict_sample[key]
         if arr.shape[0] > 100:
             idx = np.random.choice(arr.shape[0], 100, replace=False)
             data_dict_sample[key] = arr[idx]
+    # サンプリング後にcollate
+    data_dict_sample = registration_collate_fn_stack_mode(
+        [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+    )
     torch.cuda.synchronize()
     start_time = time.time()
     data_dict2s = to_cuda(data_dict_sample)
