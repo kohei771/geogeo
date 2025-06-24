@@ -110,11 +110,11 @@ def main():
     args = parser.parse_args()
     cfg = make_cfg()
     # prepare data
-    data_dict = load_data(args)
+    data_dict_raw = load_data(args)
     # neighbor_limitsの長さをnum_stagesに合わせる
     neighbor_limits = [38] * cfg.backbone.num_stages
     data_dict = registration_collate_fn_stack_mode(
-        [data_dict], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+        [data_dict_raw], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
     # prepare model
     model = create_model(cfg).cuda()
@@ -154,8 +154,7 @@ def main():
 
     # --- サンプリングver推論（例: N=128） ---
     N = 128
-    data_dict_sample = sample_points(data_dict, N)
-    # collate, to_cuda, 推論
+    data_dict_sample = sample_points(data_dict_raw, N)
     data_dict_sample = registration_collate_fn_stack_mode(
         [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
