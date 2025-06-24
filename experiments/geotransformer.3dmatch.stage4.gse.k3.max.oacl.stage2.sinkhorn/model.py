@@ -133,11 +133,27 @@ class GeoTransformer(nn.Module):
         # 3. Conditional Transformer
         ref_feats_c = feats_c[:ref_length_c]
         src_feats_c = feats_c[ref_length_c:]
+        ref_points_c_sampled = ref_points_c
+        src_points_c_sampled = src_points_c
+        ref_feats_c_sampled = ref_feats_c
+        src_feats_c_sampled = src_feats_c
+        # --- 追加: 推論時はランダムに100個ずつサンプリング ---
+        if not self.training:
+            num_sample = 100
+            if ref_points_c.shape[0] > num_sample:
+                idx = torch.randperm(ref_points_c.shape[0])[:num_sample]
+                ref_points_c_sampled = ref_points_c[idx]
+                ref_feats_c_sampled = ref_feats_c[idx]
+            if src_points_c.shape[0] > num_sample:
+                idx = torch.randperm(src_points_c.shape[0])[:num_sample]
+                src_points_c_sampled = src_points_c[idx]
+                src_feats_c_sampled = src_feats_c[idx]
+        # --- ここまで追加 ---
         ref_feats_c, src_feats_c = self.transformer(
-            ref_points_c.unsqueeze(0),
-            src_points_c.unsqueeze(0),
-            ref_feats_c.unsqueeze(0),
-            src_feats_c.unsqueeze(0),
+            ref_points_c_sampled.unsqueeze(0),
+            src_points_c_sampled.unsqueeze(0),
+            ref_feats_c_sampled.unsqueeze(0),
+            src_feats_c_sampled.unsqueeze(0),
         )
         ref_feats_c_norm = F.normalize(ref_feats_c.squeeze(0), p=2, dim=1)
         src_feats_c_norm = F.normalize(src_feats_c.squeeze(0), p=2, dim=1)
@@ -156,11 +172,8 @@ class GeoTransformer(nn.Module):
             ref_node_corr_indices, src_node_corr_indices, node_corr_scores = self.coarse_matching(
                 ref_feats_c_norm, src_feats_c_norm, ref_node_masks, src_node_masks
             )
-
             output_dict['ref_node_corr_indices'] = ref_node_corr_indices
             output_dict['src_node_corr_indices'] = src_node_corr_indices
-
-            # 7 Random select ground truth node correspondences during training
             if self.training:
                 ref_node_corr_indices, src_node_corr_indices, node_corr_scores = self.coarse_target(
                     gt_node_corr_indices, gt_node_corr_overlaps
