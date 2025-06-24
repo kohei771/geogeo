@@ -155,31 +155,34 @@ def main():
     # --- サンプリングver推論（Nリストでループ, stage3スーパーポイントからサンプリング） ---
     N_list = [128, 256, 512]
     for N in N_list:
-        # 通常通りcollateまで進める
-        data_dict_collated = registration_collate_fn_stack_mode(
-            [data_dict_raw], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
-        )
-        # stage3のref/src点群・特徴量を取得
-        ref_points, src_points, ref_feats, src_feats, transform = safe_get_stage3(data_dict_collated)
-        import torch
+        # collate前の生データからN点サンプリング
+        src_points = data_dict_raw["src_points"]
+        ref_points = data_dict_raw["ref_points"]
+        src_feats = data_dict_raw["src_feats"]
+        ref_feats = data_dict_raw["ref_feats"]
         n_ref = min(N, ref_points.shape[0])
         n_src = min(N, src_points.shape[0])
-        ref_idx = torch.randperm(ref_points.shape[0])[:n_ref]
-        src_idx = torch.randperm(src_points.shape[0])[:n_src]
+        ref_idx = np.random.permutation(ref_points.shape[0])[:n_ref]
+        src_idx = np.random.permutation(src_points.shape[0])[:n_src]
         ref_points_sample = ref_points[ref_idx]
         src_points_sample = src_points[src_idx]
         ref_feats_sample = ref_feats[ref_idx]
         src_feats_sample = src_feats[src_idx]
         # サンプリング後のdata_dictを再構成
         data_dict_sample = {
-            "ref_points": ref_points_sample,
-            "src_points": src_points_sample,
-            "ref_feats": ref_feats_sample,
-            "src_feats": src_feats_sample,
-            "transform": transform,
+            "ref_points": ref_points_sample.astype(np.float32),
+            "src_points": src_points_sample.astype(np.float32),
+            "ref_feats": ref_feats_sample.astype(np.float32),
+            "src_feats": src_feats_sample.astype(np.float32),
         }
-        # モデルに渡す（collate済みなのでto_cudaのみ）
-        data_dict_sample_cuda = to_cuda(data_dict_sample)
+        if "transform" in data_dict_raw:
+            data_dict_sample["transform"] = data_dict_raw["transform"]
+        # collate
+        data_dict_sample_collated = registration_collate_fn_stack_mode(
+            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+        )
+        # モデルに渡す
+        data_dict_sample_cuda = to_cuda(data_dict_sample_collated)
         torch.cuda.synchronize()
         start_time = time.time()
         output_dict_sample = model(data_dict_sample_cuda)
@@ -187,12 +190,12 @@ def main():
         elapsed_sample = time.time() - start_time
         data_dict_sample_cuda = release_cuda(data_dict_sample_cuda)
         output_dict_sample = release_cuda(output_dict_sample)
-        ref_points_sample = output_dict_sample["ref_points"]
-        src_points_sample = output_dict_sample["src_points"]
+        ref_points_sample_out = output_dict_sample["ref_points"]
+        src_points_sample_out = output_dict_sample["src_points"]
         estimated_transform_sample = output_dict_sample["estimated_transform"]
-        transform_sample = data_dict_sample["transform"]
+        transform_sample = data_dict_sample_collated["transform"]
         rre_sample, rte_sample = compute_registration_error(transform_sample, estimated_transform_sample)
-        print(f"[SAMPLED STAGE3 N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
+        print(f"[SAMPLED RAW N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
     # --- サンプリングverここまで ---
 
     # 3回目（プロファイラ有効）
