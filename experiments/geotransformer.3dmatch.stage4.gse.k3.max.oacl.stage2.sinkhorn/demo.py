@@ -90,7 +90,32 @@ def main():
     estimated_transform2 = output_dict2["estimated_transform"]
     transform2 = data_dict["transform"]
     rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
-    print(f"[RUN2] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
+    print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
+
+    # 2回目（スーパーポイント100点ずつサンプリングver）
+    import copy
+    import numpy as np
+    data_dict_sample = copy.deepcopy(data_dict)
+    # ref_points, src_points, ref_feats, src_feats だけ100点サンプリング
+    for key in ["ref_points", "src_points", "ref_feats", "src_feats"]:
+        arr = data_dict_sample[key]
+        if arr.shape[0] > 100:
+            idx = np.random.choice(arr.shape[0], 100, replace=False)
+            data_dict_sample[key] = arr[idx]
+    torch.cuda.synchronize()
+    start_time = time.time()
+    data_dict2s = to_cuda(data_dict_sample)
+    output_dict2s = model(data_dict2s)
+    torch.cuda.synchronize()
+    elapsed2s = time.time() - start_time
+    data_dict2s = release_cuda(data_dict2s)
+    output_dict2s = release_cuda(output_dict2s)
+    ref_points2s = output_dict2s["ref_points"]
+    src_points2s = output_dict2s["src_points"]
+    estimated_transform2s = output_dict2s["estimated_transform"]
+    transform2s = data_dict_sample["transform"]
+    rre2s, rte2s = compute_registration_error(transform2s, estimated_transform2s)
+    print(f"[RUN2][SAMPLED100] RRE(deg): {rre2s:.3f}, RTE(m): {rte2s:.3f}, Time(s): {elapsed2s:.3f}")
 
     # 3回目（プロファイラ有効）
     with torch.profiler.profile(
