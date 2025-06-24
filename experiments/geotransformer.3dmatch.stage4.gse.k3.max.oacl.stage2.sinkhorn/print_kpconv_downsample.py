@@ -1,12 +1,14 @@
 import numpy as np
 from geotransformer.utils.data import registration_collate_fn_stack_mode
 from config import make_cfg
+import os
 
 if __name__ == "__main__":
     cfg = make_cfg()
-    # デモ用データのパス
-    src_file = "data/demo/src.npy"
-    ref_file = "data/demo/ref.npy"
+    # デモ用データの絶対パス取得
+    base_dir = os.path.join(cfg.root_dir, "data", "demo")
+    src_file = os.path.join(base_dir, "src.npy")
+    ref_file = os.path.join(base_dir, "ref.npy")
     src_points = np.load(src_file)
     ref_points = np.load(ref_file)
     src_feats = np.ones((src_points.shape[0], 1), dtype=np.float32)
