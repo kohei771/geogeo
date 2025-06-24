@@ -98,12 +98,14 @@ def main():
     for N, label in zip([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
                         ["SAMPLED100", "SAMPLED200", "SAMPLED300", "SAMPLED400", "SAMPLED500", "SAMPLED600", "SAMPLED700", "SAMPLED800", "SAMPLED900", "SAMPLED1000"]):
         data_dict_sample = copy.deepcopy(load_data(args))  # collate前のdictを使う
-        # src/ref合わせてN個サンプリング（src/ref比率は元の点数比で分割）
         n_src = data_dict_sample["src_points"].shape[0]
         n_ref = data_dict_sample["ref_points"].shape[0]
         total = n_src + n_ref
-        n_src_sample = int(N * n_src / total)
-        n_ref_sample = N - n_src_sample
+        k = max(neighbor_limits)  # 例: 38
+        n_src_sample = max(k, int(N * n_src / total))
+        n_ref_sample = max(k, N - n_src_sample)
+        n_src_sample = min(n_src_sample, n_src)
+        n_ref_sample = min(n_ref_sample, n_ref)
         # src
         if n_src > n_src_sample:
             idx_src = np.random.choice(n_src, n_src_sample, replace=False)
