@@ -196,3 +196,48 @@ def test_data_loader(cfg):
     )
 
     return test_loader, neighbor_limits
+
+
+if __name__ == "__main__":
+    from types import SimpleNamespace
+    import sys
+
+    # 仮の設定（必要に応じて修正してください）
+    cfg = SimpleNamespace()
+    cfg.data = SimpleNamespace(dataset_root="data/demo")
+    cfg.train = SimpleNamespace(
+        point_limit=None,
+        use_augmentation=False,
+        augmentation_noise=0.01,
+        augmentation_min_scale=0.8,
+        augmentation_max_scale=1.2,
+        augmentation_shift=2.0,
+        augmentation_rotation=1.0,
+        use_intensity=True,
+        batch_size=1,
+        num_workers=0,
+    )
+    cfg.test = SimpleNamespace(
+        point_limit=None,
+        use_intensity=True,
+        batch_size=1,
+        num_workers=0,
+    )
+    cfg.backbone = SimpleNamespace(
+        num_stages=5,
+        init_voxel_size=0.3,
+        init_radius=1.0,
+    )
+
+    dataset = IntensityOnlyDataset(
+        cfg.data.dataset_root,
+        "train",
+        point_limit=cfg.train.point_limit,
+        use_augmentation=cfg.train.use_augmentation,
+        use_intensity=cfg.train.use_intensity,
+    )
+    sample = dataset[0]
+    print("ref_feats shape:", sample["ref_feats"].shape)
+    print("ref_feats (first 10):", sample["ref_feats"][:10])
+    print("src_feats shape:", sample["src_feats"].shape)
+    print("src_feats (first 10):", sample["src_feats"][:10])
