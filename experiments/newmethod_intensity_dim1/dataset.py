@@ -242,9 +242,8 @@ if __name__ == "__main__":
     print("src_feats shape:", sample["src_feats"].shape)
     print("src_feats (first 10):", sample["src_feats"][:10])
     
-    # --- ここからスーパーポイント数のprintテスト ---
+    # --- ここからスーパーポイント数のprintテスト（ref/src個別・正確版） ---
     from geotransformer.utils.data import registration_collate_fn_stack_mode
-    # neighbor_limitsはcalibrate_neighbors_stack_modeで得るのが正しいが、ここでは仮で32を使う
     neighbor_limits = [32] * cfg.backbone.num_stages
     collated = registration_collate_fn_stack_mode(
         [sample],
@@ -254,9 +253,11 @@ if __name__ == "__main__":
         neighbor_limits,
         precompute_data=True,
     )
-    # refとsrcの点数を個別に取得
-    ref_points_pyramid = [p[:sample['ref_points'].shape[0]] for p in collated['points'][:cfg.backbone.num_stages]]
-    src_points_pyramid = [p[sample['ref_points'].shape[0]:] for p in collated['points'][:cfg.backbone.num_stages]]
+    # 各ステージごとのref/src点数
+    lengths_pyramid = collated['lengths'].reshape(cfg.backbone.num_stages, 2)  # (num_stages, 2)
+    points_pyramid = collated['points'][:cfg.backbone.num_stages]
+    ref_points_pyramid = [p[:l[0]] for p, l in zip(points_pyramid, lengths_pyramid)]
+    src_points_pyramid = [p[l[0]:l[0]+l[1]] for p, l in zip(points_pyramid, lengths_pyramid)]
     print("各ステージのref点数:", [p.shape[0] for p in ref_points_pyramid])
     print("各ステージのsrc点数:", [p.shape[0] for p in src_points_pyramid])
     print("最終refスーパーポイント数:", ref_points_pyramid[-1].shape[0])
