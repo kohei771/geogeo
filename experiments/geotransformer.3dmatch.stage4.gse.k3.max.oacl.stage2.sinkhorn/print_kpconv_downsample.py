@@ -1,7 +1,7 @@
 import numpy as np
 from geotransformer.utils.data import registration_collate_fn_stack_mode
 from config import make_cfg
-ｓimport os
+import os
 
 if __name__ == "__main__":
     cfg = make_cfg()
