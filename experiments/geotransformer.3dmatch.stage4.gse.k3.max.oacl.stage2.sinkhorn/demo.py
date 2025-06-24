@@ -152,17 +152,36 @@ def main():
     rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
     print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
 
-    # --- サンプリングver推論（Nリストでループ） ---
-    N_list = [128, 256, 512]  # N=64は除外
+    # --- サンプリングver推論（Nリストでループ, stage3スーパーポイントからサンプリング） ---
+    N_list = [128, 256, 512]
     for N in N_list:
-        neighbor_limits_sample = [min(nl, N) for nl in neighbor_limits]
-        data_dict_sample = sample_points(data_dict_raw, N)
-        data_dict_sample = registration_collate_fn_stack_mode(
-            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits_sample
+        # 通常通りcollateまで進める
+        data_dict_collated = registration_collate_fn_stack_mode(
+            [data_dict_raw], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
         )
+        # stage3のref/src点群・特徴量を取得
+        ref_points, src_points, ref_feats, src_feats, transform = safe_get_stage3(data_dict_collated)
+        import torch
+        n_ref = min(N, ref_points.shape[0])
+        n_src = min(N, src_points.shape[0])
+        ref_idx = torch.randperm(ref_points.shape[0])[:n_ref]
+        src_idx = torch.randperm(src_points.shape[0])[:n_src]
+        ref_points_sample = ref_points[ref_idx]
+        src_points_sample = src_points[src_idx]
+        ref_feats_sample = ref_feats[ref_idx]
+        src_feats_sample = src_feats[src_idx]
+        # サンプリング後のdata_dictを再構成
+        data_dict_sample = {
+            "ref_points": ref_points_sample,
+            "src_points": src_points_sample,
+            "ref_feats": ref_feats_sample,
+            "src_feats": src_feats_sample,
+            "transform": transform,
+        }
+        # モデルに渡す（collate済みなのでto_cudaのみ）
+        data_dict_sample_cuda = to_cuda(data_dict_sample)
         torch.cuda.synchronize()
         start_time = time.time()
-        data_dict_sample_cuda = to_cuda(data_dict_sample)
         output_dict_sample = model(data_dict_sample_cuda)
         torch.cuda.synchronize()
         elapsed_sample = time.time() - start_time
@@ -173,7 +192,7 @@ def main():
         estimated_transform_sample = output_dict_sample["estimated_transform"]
         transform_sample = data_dict_sample["transform"]
         rre_sample, rte_sample = compute_registration_error(transform_sample, estimated_transform_sample)
-        print(f"[SAMPLED N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
+        print(f"[SAMPLED STAGE3 N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
     # --- サンプリングverここまで ---
 
     # 3回目（プロファイラ有効）
