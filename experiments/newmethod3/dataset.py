@@ -1,6 +1,6 @@
 import numpy as np
 
-from geotransformer.datasets.registration.kitti import KittiPairDataset
+from geotransformer.datasets.registration.newmethod_intensity.dataset import NewMethodIntensityPairDataset
 from geotransformer.utils.data import (
     registration_collate_fn_stack_mode,
     calibrate_neighbors_stack_mode,
@@ -8,30 +8,44 @@ from geotransformer.utils.data import (
 )
 
 
-class NewMethod3KittiPairDataset(KittiPairDataset):
+class NewMethod3PairDataset(NewMethodIntensityPairDataset):
+    """
+    Dataset for newmethod3: weighted enhancement using intensity to modulate coordinates.
+    This dataset inherits from NewMethodIntensityPairDataset but modifies the coordinates
+    by multiplying them with intensity values. The features are replaced with dummy ones (all ones).
+    """
+
     def __getitem__(self, index):
+        # Load data including intensity using the parent class logic
         data_dict = super().__getitem__(index)
-        ref_points = data_dict['ref_points']
-        src_points = data_dict['src_points']
-        ref_feats = data_dict['ref_feats']
-        src_feats = data_dict['src_feats']
 
-        # weight coordinates by intensity
-        ref_points_weighted = ref_points * ref_feats
-        src_points_weighted = src_points * src_feats
+        # The parent class puts all (x,y,z,i) in 'ref_points' and 'src_points'
+        ref_points_with_intensity = data_dict['ref_points']
+        src_points_with_intensity = data_dict['src_points']
 
-        data_dict['ref_points'] = ref_points_weighted
-        data_dict['src_points'] = src_points_weighted
+        # Separate XYZ and intensity
+        ref_xyz = ref_points_with_intensity[:, :3]
+        src_xyz = src_points_with_intensity[:, :3]
+        ref_intensity = ref_points_with_intensity[:, 3:4]
+        src_intensity = src_points_with_intensity[:, 3:4]
 
-        # set dummy features
-        data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
-        data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
+        # Weight coordinates by intensity
+        ref_weighted_xyz = ref_xyz * ref_intensity
+        src_weighted_xyz = src_xyz * src_intensity
+
+        # Overwrite points with weighted coordinates
+        data_dict['ref_points'] = ref_weighted_xyz.astype(np.float32)
+        data_dict['src_points'] = src_weighted_xyz.astype(np.float32)
+
+        # Overwrite features with dummy ones
+        data_dict['ref_feats'] = np.ones((ref_points_with_intensity.shape[0], 1), dtype=np.float32)
+        data_dict['src_feats'] = np.ones((src_points_with_intensity.shape[0], 1), dtype=np.float32)
 
         return data_dict
 
 
 def train_valid_data_loader(cfg, distributed):
-    train_dataset = NewMethod3KittiPairDataset(
+    train_dataset = NewMethod3PairDataset(
         cfg.data.dataset_root,
         'train',
         point_limit=cfg.train.point_limit,
@@ -41,6 +55,7 @@ def train_valid_data_loader(cfg, distributed):
         augmentation_max_scale=cfg.train.augmentation_max_scale,
         augmentation_shift=cfg.train.augmentation_shift,
         augmentation_rotation=cfg.train.augmentation_rotation,
+        use_intensity=True,  # Ensure intensity is loaded
     )
     neighbor_limits = calibrate_neighbors_stack_mode(
         train_dataset,
@@ -62,11 +77,12 @@ def train_valid_data_loader(cfg, distributed):
         distributed=distributed,
     )
 
-    valid_dataset = NewMethod3KittiPairDataset(
+    valid_dataset = NewMethod3PairDataset(
         cfg.data.dataset_root,
         'val',
         point_limit=cfg.test.point_limit,
         use_augmentation=False,
+        use_intensity=True, # Ensure intensity is loaded
     )
     valid_loader = build_dataloader_stack_mode(
         valid_dataset,
@@ -85,16 +101,13 @@ def train_valid_data_loader(cfg, distributed):
 
 
 def test_data_loader(cfg):
-    train_dataset = NewMethod3KittiPairDataset(
+    # The test loader needs neighbor_limits, which is calibrated on the training set.
+    train_dataset = NewMethod3PairDataset(
         cfg.data.dataset_root,
         'train',
         point_limit=cfg.train.point_limit,
-        use_augmentation=cfg.train.use_augmentation,
-        augmentation_noise=cfg.train.augmentation_noise,
-        augmentation_min_scale=cfg.train.augmentation_min_scale,
-        augmentation_max_scale=cfg.train.augmentation_max_scale,
-        augmentation_shift=cfg.train.augmentation_shift,
-        augmentation_rotation=cfg.train.augmentation_rotation,
+        use_augmentation=False, # No augmentation for calibration
+        use_intensity=True,
     )
     neighbor_limits = calibrate_neighbors_stack_mode(
         train_dataset,
@@ -104,11 +117,12 @@ def test_data_loader(cfg):
         cfg.backbone.init_radius,
     )
 
-    test_dataset = NewMethod3KittiPairDataset(
+    test_dataset = NewMethod3PairDataset(
         cfg.data.dataset_root,
         'test',
         point_limit=cfg.test.point_limit,
         use_augmentation=False,
+        use_intensity=True, # Ensure intensity is loaded
     )
     test_loader = build_dataloader_stack_mode(
         test_dataset,
