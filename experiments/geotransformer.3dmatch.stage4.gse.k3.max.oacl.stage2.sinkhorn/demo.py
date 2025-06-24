@@ -121,9 +121,14 @@ def main():
             data_dict_sample["ref_points"] = data_dict_sample["ref_points"][idx_ref]
             data_dict_sample["ref_feats"] = data_dict_sample["ref_feats"][idx_ref]
         # サンプリング後にcollate
+        # point_limitをサンプリング後の最小点数以下に制限
+        point_limit = min(cfg.train.point_limit if cfg.train.point_limit is not None else 30000, n_src_sample, n_ref_sample)
+        orig_point_limit = cfg.train.point_limit
+        cfg.train.point_limit = point_limit
         data_dict_sample = registration_collate_fn_stack_mode(
             [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
         )
+        cfg.train.point_limit = orig_point_limit  # 元に戻す
         torch.cuda.synchronize()
         start_time = time.time()
         data_dict2s = to_cuda(data_dict_sample)
