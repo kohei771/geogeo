@@ -153,9 +153,8 @@ def main():
     print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
 
     # --- サンプリングver推論（Nリストでループ） ---
-    N_list = [64, 128, 256, 512]
+    N_list = [128, 256, 512]  # N=64は除外
     for N in N_list:
-        # neighbor_limitsをN以下に調整
         neighbor_limits_sample = [min(nl, N) for nl in neighbor_limits]
         data_dict_sample = sample_points(data_dict_raw, N)
         data_dict_sample = registration_collate_fn_stack_mode(
