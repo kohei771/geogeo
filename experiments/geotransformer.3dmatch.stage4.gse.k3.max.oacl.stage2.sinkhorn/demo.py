@@ -162,6 +162,8 @@ def main():
             break
     if feats is None:
         raise KeyError("No valid feature key found in data_dict. Available keys: {}".format(list(data_dict.keys())))
+    # .contiguous()でviewエラーを防ぐ
+    feats = feats.contiguous() if hasattr(feats, 'contiguous') else feats
     with torch.no_grad():
         feats_list = model.backbone(feats.cuda(), data_dict)
     # stage3スーパーポイント・特徴量を取得
