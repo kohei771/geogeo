@@ -129,3 +129,6 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.metadata)
+
+# for compatibility with experiments code
+NewMethodIntensityPairDataset = OdometryKittiPairDataset
