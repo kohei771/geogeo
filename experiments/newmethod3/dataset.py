@@ -6,6 +6,7 @@ from geotransformer.utils.data import (
     calibrate_neighbors_stack_mode,
     build_dataloader_stack_mode,
 )
+from geotransformer.utils.registration import get_correspondences
 
 
 class NewMethod3PairDataset(NewMethodIntensityPairDataset):
@@ -16,31 +17,52 @@ class NewMethod3PairDataset(NewMethodIntensityPairDataset):
     """
 
     def __getitem__(self, index):
-        # Load data including intensity using the parent class logic
-        data_dict = super().__getitem__(index)
+        data_dict = {}
 
-        # The parent class puts all (x,y,z,i) in 'ref_points' and 'src_points'
-        ref_points_with_intensity = data_dict['ref_points']
-        src_points_with_intensity = data_dict['src_points']
+        metadata = self.metadata[index]
+        data_dict['seq_id'] = metadata['seq_id']
+        data_dict['ref_frame'] = metadata['frame0']
+        data_dict['src_frame'] = metadata['frame1']
+
+        # Load point cloud using parent's method, which handles path and point limit
+        ref_points_with_intensity = self._load_point_cloud(self._get_pcd_path(metadata['pcd0']))
+        src_points_with_intensity = self._load_point_cloud(self._get_pcd_path(metadata['pcd1']))
+        transform = metadata['transform']
+
+        if self.use_augmentation:
+            ref_points_with_intensity, src_points_with_intensity, transform = self._augment_point_cloud(
+                ref_points_with_intensity, src_points_with_intensity, transform
+            )
+
+        if self.return_corr_indices:
+            # Correspondences should be calculated on original coordinates before weighting
+            ref_xyz_for_corr = ref_points_with_intensity[:, :3]
+            src_xyz_for_corr = src_points_with_intensity[:, :3]
+            corr_indices = get_correspondences(ref_xyz_for_corr, src_xyz_for_corr, transform, self.matching_radius)
+            data_dict['corr_indices'] = corr_indices
 
         # Separate XYZ and intensity
         ref_xyz = ref_points_with_intensity[:, :3]
         src_xyz = src_points_with_intensity[:, :3]
-        ref_intensity = ref_points_with_intensity[:, 3:4]
-        src_intensity = src_points_with_intensity[:, 3:4]
+        
+        # Ensure intensity exists, otherwise use 1.0
+        ref_intensity = ref_points_with_intensity[:, 3:4] if ref_points_with_intensity.shape[1] >= 4 else np.ones_like(ref_points_with_intensity[:, :1])
+        src_intensity = src_points_with_intensity[:, 3:4] if src_points_with_intensity.shape[1] >= 4 else np.ones_like(src_points_with_intensity[:, :1])
 
         # Weight coordinates by intensity
         ref_weighted_xyz = ref_xyz * ref_intensity
         src_weighted_xyz = src_xyz * src_intensity
 
-        # Overwrite points with weighted coordinates
+        # Set weighted coordinates as 'points'
         data_dict['ref_points'] = ref_weighted_xyz.astype(np.float32)
         data_dict['src_points'] = src_weighted_xyz.astype(np.float32)
 
-        # Overwrite features with dummy ones
+        # Set dummy features
         data_dict['ref_feats'] = np.ones((ref_points_with_intensity.shape[0], 1), dtype=np.float32)
         data_dict['src_feats'] = np.ones((src_points_with_intensity.shape[0], 1), dtype=np.float32)
 
+        data_dict['transform'] = transform.astype(np.float32)
+        
         return data_dict
 
 
