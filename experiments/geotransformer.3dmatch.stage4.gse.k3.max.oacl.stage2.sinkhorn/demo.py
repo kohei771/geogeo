@@ -102,8 +102,14 @@ def main():
         [copy.deepcopy(raw_data_dict)], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
     # stage3点群
-    ref_points_stage3 = data_dict_collated["ref_points"][-1]
-    src_points_stage3 = data_dict_collated["src_points"][-1]
+    ref_points_all = data_dict_collated["ref_points"]
+    src_points_all = data_dict_collated["src_points"]
+    if isinstance(ref_points_all, (list, tuple)):
+        ref_points_stage3 = ref_points_all[-1]
+        src_points_stage3 = src_points_all[-1]
+    else:
+        ref_points_stage3 = ref_points_all
+        src_points_stage3 = src_points_all
     n_ref3 = ref_points_stage3.shape[0]
     n_src3 = src_points_stage3.shape[0]
     total3 = n_ref3 + n_src3
