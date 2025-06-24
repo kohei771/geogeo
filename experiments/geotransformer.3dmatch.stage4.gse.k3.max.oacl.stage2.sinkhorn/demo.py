@@ -122,10 +122,12 @@ def main():
     lengths = data_dict_collated['lengths']
     features = data_dict_collated['features']
     stage3_points = points_list[-1]
-    ref_points_stage3 = stage3_points[:lengths[0]]
-    src_points_stage3 = stage3_points[lengths[0]:]
-    ref_feats_stage3 = features[:lengths[0]]
-    src_feats_stage3 = features[lengths[0]:]
+    ref_n = int(lengths[0])
+    src_n = int(lengths[1])
+    ref_points_stage3 = stage3_points[:ref_n]
+    src_points_stage3 = stage3_points[ref_n:ref_n+src_n]
+    ref_feats_stage3 = features[:ref_n]
+    src_feats_stage3 = features[ref_n:ref_n+src_n]
     transform_stage3 = data_dict_collated.get('transform', None)
     n_ref3 = ref_points_stage3.shape[0]
     n_src3 = src_points_stage3.shape[0]
