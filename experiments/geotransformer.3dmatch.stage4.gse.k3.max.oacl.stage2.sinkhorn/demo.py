@@ -92,33 +92,46 @@ def main():
     rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
     print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
 
-    # 2回目（スーパーポイント100点ずつサンプリングver）
+    # 2回目（スーパーポイント合計数を変えてサンプリングver）
     import copy
     import numpy as np
-    data_dict_sample = copy.deepcopy(load_data(args))  # collate前のdictを使う
-    for key in ["ref_points", "src_points", "ref_feats", "src_feats"]:
-        arr = data_dict_sample[key]
-        if arr.shape[0] > 100:
-            idx = np.random.choice(arr.shape[0], 100, replace=False)
-            data_dict_sample[key] = arr[idx]
-    # サンプリング後にcollate
-    data_dict_sample = registration_collate_fn_stack_mode(
-        [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
-    )
-    torch.cuda.synchronize()
-    start_time = time.time()
-    data_dict2s = to_cuda(data_dict_sample)
-    output_dict2s = model(data_dict2s)
-    torch.cuda.synchronize()
-    elapsed2s = time.time() - start_time
-    data_dict2s = release_cuda(data_dict2s)
-    output_dict2s = release_cuda(output_dict2s)
-    ref_points2s = output_dict2s["ref_points"]
-    src_points2s = output_dict2s["src_points"]
-    estimated_transform2s = output_dict2s["estimated_transform"]
-    transform2s = data_dict_sample["transform"]
-    rre2s, rte2s = compute_registration_error(transform2s, estimated_transform2s)
-    print(f"[RUN2][SAMPLED100] RRE(deg): {rre2s:.3f}, RTE(m): {rte2s:.3f}, Time(s): {elapsed2s:.3f}")
+    for N, label in zip([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
+                        ["SAMPLED100", "SAMPLED200", "SAMPLED300", "SAMPLED400", "SAMPLED500", "SAMPLED600", "SAMPLED700", "SAMPLED800", "SAMPLED900", "SAMPLED1000"]):
+        data_dict_sample = copy.deepcopy(load_data(args))  # collate前のdictを使う
+        # src/ref合わせてN個サンプリング（src/ref比率は元の点数比で分割）
+        n_src = data_dict_sample["src_points"].shape[0]
+        n_ref = data_dict_sample["ref_points"].shape[0]
+        total = n_src + n_ref
+        n_src_sample = int(N * n_src / total)
+        n_ref_sample = N - n_src_sample
+        # src
+        if n_src > n_src_sample:
+            idx_src = np.random.choice(n_src, n_src_sample, replace=False)
+            data_dict_sample["src_points"] = data_dict_sample["src_points"][idx_src]
+            data_dict_sample["src_feats"] = data_dict_sample["src_feats"][idx_src]
+        # ref
+        if n_ref > n_ref_sample:
+            idx_ref = np.random.choice(n_ref, n_ref_sample, replace=False)
+            data_dict_sample["ref_points"] = data_dict_sample["ref_points"][idx_ref]
+            data_dict_sample["ref_feats"] = data_dict_sample["ref_feats"][idx_ref]
+        # サンプリング後にcollate
+        data_dict_sample = registration_collate_fn_stack_mode(
+            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+        )
+        torch.cuda.synchronize()
+        start_time = time.time()
+        data_dict2s = to_cuda(data_dict_sample)
+        output_dict2s = model(data_dict2s)
+        torch.cuda.synchronize()
+        elapsed2s = time.time() - start_time
+        data_dict2s = release_cuda(data_dict2s)
+        output_dict2s = release_cuda(output_dict2s)
+        ref_points2s = output_dict2s["ref_points"]
+        src_points2s = output_dict2s["src_points"]
+        estimated_transform2s = output_dict2s["estimated_transform"]
+        transform2s = data_dict_sample["transform"]
+        rre2s, rte2s = compute_registration_error(transform2s, estimated_transform2s)
+        print(f"[RUN2][{label}] RRE(deg): {rre2s:.3f}, RTE(m): {rte2s:.3f}, Time(s): {elapsed2s:.3f}")
 
     # 3回目（プロファイラ有効）
     with torch.profiler.profile(
