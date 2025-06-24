@@ -155,9 +155,11 @@ def main():
     # --- サンプリングver推論（Nリストでループ） ---
     N_list = [64, 128, 256, 512]
     for N in N_list:
+        # neighbor_limitsをN以下に調整
+        neighbor_limits_sample = [min(nl, N) for nl in neighbor_limits]
         data_dict_sample = sample_points(data_dict_raw, N)
         data_dict_sample = registration_collate_fn_stack_mode(
-            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits_sample
         )
         torch.cuda.synchronize()
         start_time = time.time()
