@@ -152,50 +152,44 @@ def main():
     rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
     print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
 
-    # --- サンプリングver推論（Nリストでループ, stage3スーパーポイントからサンプリング） ---
+    # --- サンプリングver推論（Nリストでループ, stage3スーパーポイントからサンプリング→transformer以降のみ再実行） ---
     N_list = [128, 256, 512]
+    # まず通常通りcollate→backboneまで実行
+    feats = data_dict["feats"] if "feats" in data_dict else data_dict["ref_feats"]  # 互換性のため
+    with torch.no_grad():
+        feats_list = model.backbone(feats.cuda(), data_dict)
+    # stage3スーパーポイント・特徴量を取得
+    ref_length_c = data_dict["lengths"][-1][0].item()
+    src_length_c = data_dict["lengths"][-1][1].item() if data_dict["lengths"][-1].shape[0] > 1 else data_dict["lengths"][-1][0].item()
+    points_c = data_dict["points"][-1]
+    feats_c = feats_list[-1]
+    ref_points_c = points_c[:ref_length_c]
+    src_points_c = points_c[ref_length_c:ref_length_c+src_length_c]
+    ref_feats_c = feats_c[:ref_length_c]
+    src_feats_c = feats_c[ref_length_c:ref_length_c+src_length_c]
     for N in N_list:
-        # collate前の生データからN点サンプリング
-        src_points = data_dict_raw["src_points"]
-        ref_points = data_dict_raw["ref_points"]
-        src_feats = data_dict_raw["src_feats"]
-        ref_feats = data_dict_raw["ref_feats"]
-        n_ref = min(N, ref_points.shape[0])
-        n_src = min(N, src_points.shape[0])
-        ref_idx = np.random.permutation(ref_points.shape[0])[:n_ref]
-        src_idx = np.random.permutation(src_points.shape[0])[:n_src]
-        ref_points_sample = ref_points[ref_idx]
-        src_points_sample = src_points[src_idx]
-        ref_feats_sample = ref_feats[ref_idx]
-        src_feats_sample = src_feats[src_idx]
-        # サンプリング後のdata_dictを再構成
-        data_dict_sample = {
-            "ref_points": ref_points_sample.astype(np.float32),
-            "src_points": src_points_sample.astype(np.float32),
-            "ref_feats": ref_feats_sample.astype(np.float32),
-            "src_feats": src_feats_sample.astype(np.float32),
-        }
-        if "transform" in data_dict_raw:
-            data_dict_sample["transform"] = data_dict_raw["transform"]
-        # collate
-        data_dict_sample_collated = registration_collate_fn_stack_mode(
-            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
-        )
-        # モデルに渡す
-        data_dict_sample_cuda = to_cuda(data_dict_sample_collated)
-        torch.cuda.synchronize()
-        start_time = time.time()
-        output_dict_sample = model(data_dict_sample_cuda)
-        torch.cuda.synchronize()
-        elapsed_sample = time.time() - start_time
-        data_dict_sample_cuda = release_cuda(data_dict_sample_cuda)
-        output_dict_sample = release_cuda(output_dict_sample)
-        ref_points_sample_out = output_dict_sample["ref_points"]
-        src_points_sample_out = output_dict_sample["src_points"]
-        estimated_transform_sample = output_dict_sample["estimated_transform"]
-        transform_sample = data_dict_sample_collated["transform"]
-        rre_sample, rte_sample = compute_registration_error(transform_sample, estimated_transform_sample)
-        print(f"[SAMPLED RAW N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
+        n_ref = min(N, ref_points_c.shape[0])
+        n_src = min(N, src_points_c.shape[0])
+        ref_idx = torch.randperm(ref_points_c.shape[0])[:n_ref]
+        src_idx = torch.randperm(src_points_c.shape[0])[:n_src]
+        ref_points_sample = ref_points_c[ref_idx]
+        src_points_sample = src_points_c[src_idx]
+        ref_feats_sample = ref_feats_c[ref_idx]
+        src_feats_sample = src_feats_c[src_idx]
+        # transformer以降のみ再実行
+        with torch.no_grad():
+            ref_feats_out, src_feats_out = model.transformer(
+                ref_points_sample.unsqueeze(0).cuda(),
+                src_points_sample.unsqueeze(0).cuda(),
+                ref_feats_sample.unsqueeze(0).cuda(),
+                src_feats_sample.unsqueeze(0).cuda(),
+            )
+            ref_feats_out = torch.nn.functional.normalize(ref_feats_out.squeeze(0), p=2, dim=1)
+            src_feats_out = torch.nn.functional.normalize(src_feats_out.squeeze(0), p=2, dim=1)
+        # ここで必要ならマッチングや評価を追加
+        # 例: 距離行列から最近傍対応をとるなど
+        # 今回は点群・特徴量shapeのみ出力
+        print(f"[SAMPLED STAGE3 N={N}] ref_points: {ref_points_sample.shape}, src_points: {src_points_sample.shape}, ref_feats: {ref_feats_out.shape}, src_feats: {src_feats_out.shape}")
     # --- サンプリングverここまで ---
 
     # 3回目（プロファイラ有効）
