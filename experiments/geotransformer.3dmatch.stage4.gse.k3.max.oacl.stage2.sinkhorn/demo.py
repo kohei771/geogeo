@@ -95,60 +95,42 @@ def main():
     # 2回目（スーパーポイント合計数を変えてサンプリングver）
     import copy
     import numpy as np
-    # collate前の生データから最大点数でcollateし、stage3の点数合計をmax_Nとする
+    # 生データをcollateしてstage3点群を得る
     raw_data_dict = load_data(args)
     neighbor_limits = [38] * cfg.backbone.num_stages
-    # 最大点数でcollate
-    data_dict_max = registration_collate_fn_stack_mode(
+    data_dict_collated = registration_collate_fn_stack_mode(
         [copy.deepcopy(raw_data_dict)], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
-    # stage3の点数
-    ref_points_stage3 = data_dict_max["ref_points"][-1]
-    src_points_stage3 = data_dict_max["src_points"][-1]
-    max_N = min(ref_points_stage3.shape[0] + src_points_stage3.shape[0], 10000)
+    # stage3点群
+    ref_points_stage3 = data_dict_collated["ref_points"][-1]
+    src_points_stage3 = data_dict_collated["src_points"][-1]
+    n_ref3 = ref_points_stage3.shape[0]
+    n_src3 = src_points_stage3.shape[0]
+    total3 = n_ref3 + n_src3
+    max_N = total3
     for N in range(100, max_N + 1, 100):
-        label = f"SAMPLED{N}"
-        data_dict_sample = copy.deepcopy(raw_data_dict)  # collate前のdictを使う
-        n_src = data_dict_sample["src_points"].shape[0]
-        n_ref = data_dict_sample["ref_points"].shape[0]
-        total = n_src + n_ref
-        k = max(neighbor_limits)  # 例: 38
-        # サンプリング数がk未満ならスキップ
-        if N < 2 * k:
-            print(f"[RUN2][{label}] skipped (N={N} < 2*k={2*k})")
-            continue
-        n_src_sample = max(k, int(N * n_src / total))
-        n_ref_sample = max(k, N - n_src_sample)
-        n_src_sample = min(n_src_sample, n_src)
-        n_ref_sample = min(n_ref_sample, n_ref)
-        # src
-        if n_src > n_src_sample:
-            idx_src = np.random.choice(n_src, n_src_sample, replace=False)
-            data_dict_sample["src_points"] = data_dict_sample["src_points"][idx_src]
-            data_dict_sample["src_feats"] = data_dict_sample["src_feats"][idx_src]
-        # ref
-        if n_ref > n_ref_sample:
-            idx_ref = np.random.choice(n_ref, n_ref_sample, replace=False)
-            data_dict_sample["ref_points"] = data_dict_sample["ref_points"][idx_ref]
-            data_dict_sample["ref_feats"] = data_dict_sample["ref_feats"][idx_ref]
-        # サンプリング後にcollate
-        # point_limit, k, ノード数, 点数の最小値で制限
-        min_points = min(data_dict_sample["src_points"].shape[0], data_dict_sample["ref_points"].shape[0])
-        safe_k = min(k, min_points)
-        safe_point_limit = min(cfg.train.point_limit if cfg.train.point_limit is not None else 30000, min_points, safe_k)
-        orig_point_limit = cfg.train.point_limit
-        cfg.train.point_limit = safe_point_limit
-        try:
-            data_dict_sample = registration_collate_fn_stack_mode(
-                [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
-            )
-        except RuntimeError as e:
-            print(f"[RUN2][{label}] skipped due to RuntimeError: {e}")
-            cfg.train.point_limit = orig_point_limit
-            continue
-        cfg.train.point_limit = orig_point_limit  # 元に戻す
-        torch.cuda.synchronize()
-        start_time = time.time()
+        label = f"SAMPLED_STAGE3_{N}"
+        # src/ref比率でN個サンプリング
+        n_src_sample = max(1, int(N * n_src3 / total3))
+        n_ref_sample = N - n_src_sample
+        n_src_sample = min(n_src_sample, n_src3)
+        n_ref_sample = min(n_ref_sample, n_ref3)
+        # サンプリング
+        idx_src = np.random.choice(n_src3, n_src_sample, replace=False) if n_src3 > n_src_sample else np.arange(n_src3)
+        idx_ref = np.random.choice(n_ref3, n_ref_sample, replace=False) if n_ref3 > n_ref_sample else np.arange(n_ref3)
+        src_points_sample = src_points_stage3[idx_src]
+        ref_points_sample = ref_points_stage3[idx_ref]
+        # featsも同様に
+        src_feats_sample = data_dict_collated["src_feats"][-1][idx_src]
+        ref_feats_sample = data_dict_collated["ref_feats"][-1][idx_ref]
+        # 推論用data_dictを作成
+        data_dict_sample = {
+            "src_points": src_points_sample,
+            "ref_points": ref_points_sample,
+            "src_feats": src_feats_sample,
+            "ref_feats": ref_feats_sample,
+            "transform": data_dict_collated["transform"]
+        }
         try:
             data_dict2s = to_cuda(data_dict_sample)
             output_dict2s = model(data_dict2s)
