@@ -204,7 +204,7 @@ if __name__ == "__main__":
 
     # 仮の設定（必要に応じて修正してください）
     cfg = SimpleNamespace()
-    cfg.data = SimpleNamespace(dataset_root="data/demo")
+    cfg.data = SimpleNamespace(dataset_root="data/Kitti")  # ← 実際にpklが存在するパスに修正
     cfg.train = SimpleNamespace(
         point_limit=None,
         use_augmentation=False,
