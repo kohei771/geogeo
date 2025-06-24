@@ -60,6 +60,50 @@ def safe_get_stage3(data_dict):
     transform = data_dict.get("transform", None)
     return ref_points, src_points, ref_feats, src_feats, transform
 
+def sample_points(data_dict, n):
+    """
+    data_dictからref/src点群・特徴量をN個だけランダムサンプリングして新しいdata_dictを返す。
+    """
+    import torch
+    # バッチ1個分を抽出
+    if isinstance(data_dict, (list, tuple)):
+        data_dict = data_dict[0]
+    # 各stageの点群・特徴量を取得
+    def get_last(x):
+        if isinstance(x, (list, tuple)):
+            return x[-1]
+        return x
+    ref_points = get_last(data_dict["ref_points"])
+    src_points = get_last(data_dict["src_points"])
+    ref_feats = get_last(data_dict["ref_feats"])
+    src_feats = get_last(data_dict["src_feats"])
+    # torch.Tensor化
+    ref_points = torch.as_tensor(ref_points)
+    src_points = torch.as_tensor(src_points)
+    ref_feats = torch.as_tensor(ref_feats)
+    src_feats = torch.as_tensor(src_feats)
+    # サンプリング数Nが点数より多い場合は全点
+    n_ref = min(n, ref_points.shape[0])
+    n_src = min(n, src_points.shape[0])
+    # ランダムインデックス
+    ref_idx = torch.randperm(ref_points.shape[0])[:n_ref]
+    src_idx = torch.randperm(src_points.shape[0])[:n_src]
+    # サンプリング
+    ref_points_sample = ref_points[ref_idx]
+    src_points_sample = src_points[src_idx]
+    ref_feats_sample = ref_feats[ref_idx]
+    src_feats_sample = src_feats[src_idx]
+    # 新しいdata_dictを作成
+    data_dict_sample = {
+        "ref_points": ref_points_sample,
+        "src_points": src_points_sample,
+        "ref_feats": ref_feats_sample,
+        "src_feats": src_feats_sample,
+    }
+    if "transform" in data_dict:
+        data_dict_sample["transform"] = torch.as_tensor(data_dict["transform"])
+    return data_dict_sample
+
 
 def main():
     parser = make_parser()
@@ -107,6 +151,29 @@ def main():
     transform2 = data_dict["transform"]
     rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
     print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
+
+    # --- サンプリングver推論（例: N=128） ---
+    N = 128
+    data_dict_sample = sample_points(data_dict, N)
+    # collate, to_cuda, 推論
+    data_dict_sample = registration_collate_fn_stack_mode(
+        [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+    )
+    torch.cuda.synchronize()
+    start_time = time.time()
+    data_dict_sample_cuda = to_cuda(data_dict_sample)
+    output_dict_sample = model(data_dict_sample_cuda)
+    torch.cuda.synchronize()
+    elapsed_sample = time.time() - start_time
+    data_dict_sample_cuda = release_cuda(data_dict_sample_cuda)
+    output_dict_sample = release_cuda(output_dict_sample)
+    ref_points_sample = output_dict_sample["ref_points"]
+    src_points_sample = output_dict_sample["src_points"]
+    estimated_transform_sample = output_dict_sample["estimated_transform"]
+    transform_sample = data_dict_sample["transform"]
+    rre_sample, rte_sample = compute_registration_error(transform_sample, estimated_transform_sample)
+    print(f"[SAMPLED N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
+    # --- サンプリングverここまで ---
 
     # 3回目（プロファイラ有効）
     with torch.profiler.profile(
