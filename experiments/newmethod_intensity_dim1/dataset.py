@@ -241,3 +241,21 @@ if __name__ == "__main__":
     print("ref_feats (first 10):", sample["ref_feats"][:10])
     print("src_feats shape:", sample["src_feats"].shape)
     print("src_feats (first 10):", sample["src_feats"][:10])
+    
+    # --- ここからスーパーポイント数のprintテスト ---
+    from geotransformer.utils.data import registration_collate_fn_stack_mode
+    # neighbor_limitsはcalibrate_neighbors_stack_modeで得るのが正しいが、ここでは仮で32を使う
+    neighbor_limits = [32] * cfg.backbone.num_stages
+    collated = registration_collate_fn_stack_mode(
+        [sample],
+        cfg.backbone.num_stages,
+        cfg.backbone.init_voxel_size,
+        cfg.backbone.init_radius,
+        neighbor_limits,
+        precompute_data=True,
+    )
+    # 最終ステージのref点数
+    ref_points_pyramid = collated['points'][:cfg.backbone.num_stages]
+    print("各ステージのref点数:", [p.shape[0] for p in ref_points_pyramid])
+    print("最終スーパーポイント数:", ref_points_pyramid[-1].shape[0])
+    # --- ここまで追加 ---
