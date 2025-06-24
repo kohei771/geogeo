@@ -154,8 +154,14 @@ def main():
 
     # --- サンプリングver推論（Nリストでループ, stage3スーパーポイントからサンプリング→transformer以降のみ再実行） ---
     N_list = [128, 256, 512]
-    # まず通常通りcollate→backboneまで実行
-    feats = data_dict["feats"] if "feats" in data_dict else data_dict["ref_feats"]  # 互換性のため
+    # featsのキーを柔軟に取得
+    feats = None
+    for k in ["feats", "features", "ref_feats", "src_feats"]:
+        if k in data_dict:
+            feats = data_dict[k]
+            break
+    if feats is None:
+        raise KeyError("No valid feature key found in data_dict. Available keys: {}".format(list(data_dict.keys())))
     with torch.no_grad():
         feats_list = model.backbone(feats.cuda(), data_dict)
     # stage3スーパーポイント・特徴量を取得
