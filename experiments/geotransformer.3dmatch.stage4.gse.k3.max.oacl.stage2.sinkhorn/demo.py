@@ -95,8 +95,9 @@ def main():
     # 2回目（スーパーポイント合計数を変えてサンプリングver）
     import copy
     import numpy as np
-    for N, label in zip([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
-                        ["SAMPLED100", "SAMPLED200", "SAMPLED300", "SAMPLED400", "SAMPLED500", "SAMPLED600", "SAMPLED700", "SAMPLED800", "SAMPLED900", "SAMPLED1000"]):
+    max_N = min(data_dict["src_points"].shape[0] + data_dict["ref_points"].shape[0], 10000)
+    for N in range(100, max_N + 1, 100):
+        label = f"SAMPLED{N}"
         data_dict_sample = copy.deepcopy(load_data(args))  # collate前のdictを使う
         n_src = data_dict_sample["src_points"].shape[0]
         n_ref = data_dict_sample["ref_points"].shape[0]
