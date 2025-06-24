@@ -30,10 +30,7 @@ ensure_dir(_C.feature_dir)
 
 # data
 _C.data = edict()
-_C.data.dataset_root = osp.join(_C.root_dir, 'data', 'Kitti')
-
-# intensity拡張用の設定
-_C.use_intensity = True  # Trueで(x, y, z, intensity)、Falseで(x, y, z)のみ
+_C.data.dataset_root = osp.join(_C.root_dir, 'data', 'Kitti')  # The dataset class will handle loading from the 'newmethod' subdirectory.
 
 # train data
 _C.train = edict()
@@ -86,8 +83,7 @@ _C.backbone.base_sigma = 2.0
 _C.backbone.init_radius = _C.backbone.base_radius * _C.backbone.init_voxel_size
 _C.backbone.init_sigma = _C.backbone.base_sigma * _C.backbone.init_voxel_size
 _C.backbone.group_norm = 32
-# 入力次元をuse_intensityで自動切り替え
-_C.backbone.input_dim = 4 if _C.use_intensity else 3
+_C.backbone.input_dim = 1
 _C.backbone.init_dim = 64
 _C.backbone.output_dim = 256
 
