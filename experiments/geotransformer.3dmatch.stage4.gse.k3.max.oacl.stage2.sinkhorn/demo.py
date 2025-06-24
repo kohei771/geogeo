@@ -44,6 +44,22 @@ def load_data(args):
 
     return data_dict
 
+def safe_get_stage3(data_dict):
+    # バッチ1個分を抽出
+    if isinstance(data_dict, (list, tuple)):
+        data_dict = data_dict[0]
+    # 各stageの点群・特徴量を取得
+    def get_last(x):
+        if isinstance(x, (list, tuple)):
+            return x[-1]
+        return x
+    ref_points = get_last(data_dict["ref_points"])
+    src_points = get_last(data_dict["src_points"])
+    ref_feats = get_last(data_dict["ref_feats"])
+    src_feats = get_last(data_dict["src_feats"])
+    transform = data_dict.get("transform", None)
+    return ref_points, src_points, ref_feats, src_feats, transform
+
 
 def main():
     parser = make_parser()
@@ -101,15 +117,8 @@ def main():
     data_dict_collated = registration_collate_fn_stack_mode(
         [copy.deepcopy(raw_data_dict)], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
-    # stage3点群
-    ref_points_all = data_dict_collated["ref_points"]
-    src_points_all = data_dict_collated["src_points"]
-    if isinstance(ref_points_all, (list, tuple)):
-        ref_points_stage3 = ref_points_all[-1]
-        src_points_stage3 = src_points_all[-1]
-    else:
-        ref_points_stage3 = ref_points_all
-        src_points_stage3 = src_points_all
+    # stage3点群・特徴量・transformを安全に取得
+    ref_points_stage3, src_points_stage3, ref_feats_stage3, src_feats_stage3, transform_stage3 = safe_get_stage3(data_dict_collated)
     n_ref3 = ref_points_stage3.shape[0]
     n_src3 = src_points_stage3.shape[0]
     total3 = n_ref3 + n_src3
@@ -126,16 +135,15 @@ def main():
         idx_ref = np.random.choice(n_ref3, n_ref_sample, replace=False) if n_ref3 > n_ref_sample else np.arange(n_ref3)
         src_points_sample = src_points_stage3[idx_src]
         ref_points_sample = ref_points_stage3[idx_ref]
-        # featsも同様に
-        src_feats_sample = data_dict_collated["src_feats"][-1][idx_src]
-        ref_feats_sample = data_dict_collated["ref_feats"][-1][idx_ref]
+        src_feats_sample = src_feats_stage3[idx_src]
+        ref_feats_sample = ref_feats_stage3[idx_ref]
         # 推論用data_dictを作成
         data_dict_sample = {
             "src_points": src_points_sample,
             "ref_points": ref_points_sample,
             "src_feats": src_feats_sample,
             "ref_feats": ref_feats_sample,
-            "transform": data_dict_collated["transform"]
+            "transform": transform_stage3
         }
         try:
             data_dict2s = to_cuda(data_dict_sample)
