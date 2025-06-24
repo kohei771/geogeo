@@ -118,17 +118,22 @@ def main():
         [copy.deepcopy(raw_data_dict)], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
     # stage3点群・特徴量・transformを安全に取得
+    import numpy as np
+    import torch
     points_list = data_dict_collated['points']
     lengths = data_dict_collated['lengths']
     features = data_dict_collated['features']
     stage3_points = points_list[-1]
-    # ref_n, src_nをTensor/int/リストどれでも安全に取得
-    def to_int(x):
-        if hasattr(x, 'item'):
-            return int(x.item())
-        return int(x)
-    ref_n = to_int(lengths[0])
-    src_n = to_int(lengths[1])
+    # ref_n, src_nをどんなTensor/リストでも安全に取得
+    def get_ref_src_n(lengths):
+        if isinstance(lengths, torch.Tensor):
+            arr = lengths.cpu().numpy() if hasattr(lengths, 'cpu') else np.array(lengths)
+        else:
+            arr = np.array(lengths)
+        arr = arr.flatten()
+        ref_n, src_n = int(arr[0]), int(arr[1])
+        return ref_n, src_n
+    ref_n, src_n = get_ref_src_n(lengths)
     ref_points_stage3 = stage3_points[:ref_n]
     src_points_stage3 = stage3_points[ref_n:ref_n+src_n]
     ref_feats_stage3 = features[:ref_n]
