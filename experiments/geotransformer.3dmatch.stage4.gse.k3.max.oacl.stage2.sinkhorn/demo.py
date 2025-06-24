@@ -121,18 +121,29 @@ def main():
             data_dict_sample["ref_points"] = data_dict_sample["ref_points"][idx_ref]
             data_dict_sample["ref_feats"] = data_dict_sample["ref_feats"][idx_ref]
         # サンプリング後にcollate
-        # point_limitをサンプリング後の最小点数以下に制限
-        point_limit = min(cfg.train.point_limit if cfg.train.point_limit is not None else 30000, n_src_sample, n_ref_sample)
+        # point_limit, k, ノード数, 点数の最小値で制限
+        min_points = min(data_dict_sample["src_points"].shape[0], data_dict_sample["ref_points"].shape[0])
+        safe_k = min(k, min_points)
+        safe_point_limit = min(cfg.train.point_limit if cfg.train.point_limit is not None else 30000, min_points, safe_k)
         orig_point_limit = cfg.train.point_limit
-        cfg.train.point_limit = point_limit
-        data_dict_sample = registration_collate_fn_stack_mode(
-            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
-        )
+        cfg.train.point_limit = safe_point_limit
+        try:
+            data_dict_sample = registration_collate_fn_stack_mode(
+                [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+            )
+        except RuntimeError as e:
+            print(f"[RUN2][{label}] skipped due to RuntimeError: {e}")
+            cfg.train.point_limit = orig_point_limit
+            continue
         cfg.train.point_limit = orig_point_limit  # 元に戻す
         torch.cuda.synchronize()
         start_time = time.time()
-        data_dict2s = to_cuda(data_dict_sample)
-        output_dict2s = model(data_dict2s)
+        try:
+            data_dict2s = to_cuda(data_dict_sample)
+            output_dict2s = model(data_dict2s)
+        except RuntimeError as e:
+            print(f"[RUN2][{label}] skipped due to CUDA RuntimeError: {e}")
+            continue
         torch.cuda.synchronize()
         elapsed2s = time.time() - start_time
         data_dict2s = release_cuda(data_dict2s)
