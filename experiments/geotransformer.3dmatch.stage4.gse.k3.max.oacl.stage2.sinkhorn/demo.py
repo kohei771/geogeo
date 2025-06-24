@@ -152,26 +152,27 @@ def main():
     rre2, rte2 = compute_registration_error(transform2, estimated_transform2)
     print(f"[RUN2][ALL] RRE(deg): {rre2:.3f}, RTE(m): {rte2:.3f}, Time(s): {elapsed2:.3f}")
 
-    # --- サンプリングver推論（例: N=128） ---
-    N = 128
-    data_dict_sample = sample_points(data_dict_raw, N)
-    data_dict_sample = registration_collate_fn_stack_mode(
-        [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
-    )
-    torch.cuda.synchronize()
-    start_time = time.time()
-    data_dict_sample_cuda = to_cuda(data_dict_sample)
-    output_dict_sample = model(data_dict_sample_cuda)
-    torch.cuda.synchronize()
-    elapsed_sample = time.time() - start_time
-    data_dict_sample_cuda = release_cuda(data_dict_sample_cuda)
-    output_dict_sample = release_cuda(output_dict_sample)
-    ref_points_sample = output_dict_sample["ref_points"]
-    src_points_sample = output_dict_sample["src_points"]
-    estimated_transform_sample = output_dict_sample["estimated_transform"]
-    transform_sample = data_dict_sample["transform"]
-    rre_sample, rte_sample = compute_registration_error(transform_sample, estimated_transform_sample)
-    print(f"[SAMPLED N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
+    # --- サンプリングver推論（Nリストでループ） ---
+    N_list = [64, 128, 256, 512]
+    for N in N_list:
+        data_dict_sample = sample_points(data_dict_raw, N)
+        data_dict_sample = registration_collate_fn_stack_mode(
+            [data_dict_sample], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+        )
+        torch.cuda.synchronize()
+        start_time = time.time()
+        data_dict_sample_cuda = to_cuda(data_dict_sample)
+        output_dict_sample = model(data_dict_sample_cuda)
+        torch.cuda.synchronize()
+        elapsed_sample = time.time() - start_time
+        data_dict_sample_cuda = release_cuda(data_dict_sample_cuda)
+        output_dict_sample = release_cuda(output_dict_sample)
+        ref_points_sample = output_dict_sample["ref_points"]
+        src_points_sample = output_dict_sample["src_points"]
+        estimated_transform_sample = output_dict_sample["estimated_transform"]
+        transform_sample = data_dict_sample["transform"]
+        rre_sample, rte_sample = compute_registration_error(transform_sample, estimated_transform_sample)
+        print(f"[SAMPLED N={N}] RRE(deg): {rre_sample:.3f}, RTE(m): {rte_sample:.3f}, Time(s): {elapsed_sample:.3f}")
     # --- サンプリングverここまで ---
 
     # 3回目（プロファイラ有効）
@@ -195,7 +196,6 @@ def main():
     transform3 = data_dict["transform"]
     rre3, rte3 = compute_registration_error(transform3, estimated_transform3)
     print(f"[PROFILED] RRE(deg): {rre3:.3f}, RTE(m): {rte3:.3f}, Time(s): {elapsed3:.3f}")
-    print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))
 
     # visualization（3回目の結果を使用）
     ref_pcd = make_open3d_point_cloud(ref_points3)
@@ -210,7 +210,7 @@ def main():
     # compute error
     rre, rte = compute_registration_error(transform3, estimated_transform3)
     print(f"RRE(deg): {rre:.3f}, RTE(m): {rte:.3f}, Time(s): {elapsed3:.3f}")
-    print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))  # プロファイラは必要に応じて
+    # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))  # プロファイラは必要に応じて（重複出力防止のためコメントアウト）
 
 
 if __name__ == "__main__":
