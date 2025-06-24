@@ -95,10 +95,20 @@ def main():
     # 2回目（スーパーポイント合計数を変えてサンプリングver）
     import copy
     import numpy as np
-    max_N = min(data_dict["src_points"].shape[0] + data_dict["ref_points"].shape[0], 10000)
+    # collate前の生データから最大点数でcollateし、stage3の点数合計をmax_Nとする
+    raw_data_dict = load_data(args)
+    neighbor_limits = [38] * cfg.backbone.num_stages
+    # 最大点数でcollate
+    data_dict_max = registration_collate_fn_stack_mode(
+        [copy.deepcopy(raw_data_dict)], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
+    )
+    # stage3の点数
+    ref_points_stage3 = data_dict_max["ref_points"][-1]
+    src_points_stage3 = data_dict_max["src_points"][-1]
+    max_N = min(ref_points_stage3.shape[0] + src_points_stage3.shape[0], 10000)
     for N in range(100, max_N + 1, 100):
         label = f"SAMPLED{N}"
-        data_dict_sample = copy.deepcopy(load_data(args))  # collate前のdictを使う
+        data_dict_sample = copy.deepcopy(raw_data_dict)  # collate前のdictを使う
         n_src = data_dict_sample["src_points"].shape[0]
         n_ref = data_dict_sample["ref_points"].shape[0]
         total = n_src + n_ref
@@ -190,8 +200,8 @@ def main():
     src_pcd = src_pcd.transform(estimated_transform3)
     save_pointclouds_as_2d_image("after_registration_2d.png", ref_pcd, src_pcd)
     # compute error
-    rre, rte = compute_registration_error(transform, estimated_transform)
-    print(f"RRE(deg): {rre:.3f}, RTE(m): {rte:.3f}, Time(s): {elapsed:.3f}")
+    rre, rte = compute_registration_error(transform3, estimated_transform3)
+    print(f"RRE(deg): {rre:.3f}, RTE(m): {rte:.3f}, Time(s): {elapsed3:.3f}")
     print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))  # プロファイラは必要に応じて
 
 
