@@ -150,16 +150,14 @@ def main():
         # サンプリング
         idx_src = np.random.choice(n_src3, n_src_sample, replace=False) if n_src3 > n_src_sample else np.arange(n_src3)
         idx_ref = np.random.choice(n_ref3, n_ref_sample, replace=False) if n_ref3 > n_ref_sample else np.arange(n_ref3)
-        src_points_sample = src_points_stage3[idx_src]
-        ref_points_sample = ref_points_stage3[idx_ref]
-        src_feats_sample = src_feats_stage3[idx_src]
-        ref_feats_sample = ref_feats_stage3[idx_ref]
-        # 推論用data_dictを作成
-        # featuresキーも必ず追加
-        if isinstance(ref_feats_sample, np.ndarray):
-            features_sample = np.concatenate([ref_feats_sample, src_feats_sample], axis=0)
-        else:
-            features_sample = torch.cat([ref_feats_sample, src_feats_sample], dim=0)
+
+        # torch.Tensor型で統一
+        src_points_sample = torch.from_numpy(np.asarray(src_points_stage3[idx_src])).float().cuda()
+        ref_points_sample = torch.from_numpy(np.asarray(ref_points_stage3[idx_ref])).float().cuda()
+        src_feats_sample = torch.from_numpy(np.asarray(src_feats_stage3[idx_src])).float().cuda()
+        ref_feats_sample = torch.from_numpy(np.asarray(ref_feats_stage3[idx_ref])).float().cuda()
+        features_sample = torch.cat([ref_feats_sample, src_feats_sample], dim=0)
+
         data_dict_sample = {
             "src_points": src_points_sample,
             "ref_points": ref_points_sample,
@@ -169,15 +167,14 @@ def main():
             "transform": transform_stage3
         }
         try:
-            data_dict2s = to_cuda(data_dict_sample)
-            output_dict2s = model(data_dict2s)
+            # to_cuda不要（すでにcuda化済み）
+            output_dict2s = model(data_dict_sample)
         except RuntimeError as e:
             print(f"[RUN2][{label}] skipped due to CUDA RuntimeError: {e}")
             continue
         torch.cuda.synchronize()
         elapsed2s = time.time() - start_time
-        data_dict2s = release_cuda(data_dict2s)
-        output_dict2s = release_cuda(output_dict2s)
+        # release_cuda不要（すでにcuda）
         ref_points2s = output_dict2s["ref_points"]
         src_points2s = output_dict2s["src_points"]
         estimated_transform2s = output_dict2s["estimated_transform"]
