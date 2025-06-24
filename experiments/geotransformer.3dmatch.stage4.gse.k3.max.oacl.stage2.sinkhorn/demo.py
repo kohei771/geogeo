@@ -118,7 +118,15 @@ def main():
         [copy.deepcopy(raw_data_dict)], cfg.backbone.num_stages, cfg.backbone.init_voxel_size, cfg.backbone.init_radius, neighbor_limits
     )
     # stage3点群・特徴量・transformを安全に取得
-    ref_points_stage3, src_points_stage3, ref_feats_stage3, src_feats_stage3, transform_stage3 = safe_get_stage3(data_dict_collated)
+    points_list = data_dict_collated['points']
+    lengths = data_dict_collated['lengths']
+    features = data_dict_collated['features']
+    stage3_points = points_list[-1]
+    ref_points_stage3 = stage3_points[:lengths[0]]
+    src_points_stage3 = stage3_points[lengths[0]:]
+    ref_feats_stage3 = features[:lengths[0]]
+    src_feats_stage3 = features[lengths[0]:]
+    transform_stage3 = data_dict_collated.get('transform', None)
     n_ref3 = ref_points_stage3.shape[0]
     n_src3 = src_points_stage3.shape[0]
     total3 = n_ref3 + n_src3
