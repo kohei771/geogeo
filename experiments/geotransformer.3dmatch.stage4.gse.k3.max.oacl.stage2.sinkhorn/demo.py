@@ -122,9 +122,13 @@ def main():
     lengths = data_dict_collated['lengths']
     features = data_dict_collated['features']
     stage3_points = points_list[-1]
-    # ref_n, src_nをTensor/intどちらでも安全に取得
-    ref_n = int(lengths[0].item()) if hasattr(lengths[0], 'item') else int(lengths[0])
-    src_n = int(lengths[1].item()) if hasattr(lengths[1], 'item') else int(lengths[1])
+    # ref_n, src_nをTensor/int/リストどれでも安全に取得
+    def to_int(x):
+        if hasattr(x, 'item'):
+            return int(x.item())
+        return int(x)
+    ref_n = to_int(lengths[0])
+    src_n = to_int(lengths[1])
     ref_points_stage3 = stage3_points[:ref_n]
     src_points_stage3 = stage3_points[ref_n:ref_n+src_n]
     ref_feats_stage3 = features[:ref_n]
