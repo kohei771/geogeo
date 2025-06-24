@@ -102,6 +102,10 @@ def main():
         n_ref = data_dict_sample["ref_points"].shape[0]
         total = n_src + n_ref
         k = max(neighbor_limits)  # 例: 38
+        # サンプリング数がk未満ならスキップ
+        if N < 2 * k:
+            print(f"[RUN2][{label}] skipped (N={N} < 2*k={2*k})")
+            continue
         n_src_sample = max(k, int(N * n_src / total))
         n_ref_sample = max(k, N - n_src_sample)
         n_src_sample = min(n_src_sample, n_src)
