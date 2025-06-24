@@ -155,11 +155,17 @@ def main():
         src_feats_sample = src_feats_stage3[idx_src]
         ref_feats_sample = ref_feats_stage3[idx_ref]
         # 推論用data_dictを作成
+        # featuresキーも必ず追加
+        if isinstance(ref_feats_sample, np.ndarray):
+            features_sample = np.concatenate([ref_feats_sample, src_feats_sample], axis=0)
+        else:
+            features_sample = torch.cat([ref_feats_sample, src_feats_sample], dim=0)
         data_dict_sample = {
             "src_points": src_points_sample,
             "ref_points": ref_points_sample,
             "src_feats": src_feats_sample,
             "ref_feats": ref_feats_sample,
+            "features": features_sample,
             "transform": transform_stage3
         }
         try:
