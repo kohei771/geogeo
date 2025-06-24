@@ -254,8 +254,11 @@ if __name__ == "__main__":
         neighbor_limits,
         precompute_data=True,
     )
-    # 最終ステージのref点数
-    ref_points_pyramid = collated['points'][:cfg.backbone.num_stages]
+    # refとsrcの点数を個別に取得
+    ref_points_pyramid = [p[:sample['ref_points'].shape[0]] for p in collated['points'][:cfg.backbone.num_stages]]
+    src_points_pyramid = [p[sample['ref_points'].shape[0]:] for p in collated['points'][:cfg.backbone.num_stages]]
     print("各ステージのref点数:", [p.shape[0] for p in ref_points_pyramid])
-    print("最終スーパーポイント数:", ref_points_pyramid[-1].shape[0])
+    print("各ステージのsrc点数:", [p.shape[0] for p in src_points_pyramid])
+    print("最終refスーパーポイント数:", ref_points_pyramid[-1].shape[0])
+    print("最終srcスーパーポイント数:", src_points_pyramid[-1].shape[0])
     # --- ここまで追加 ---
