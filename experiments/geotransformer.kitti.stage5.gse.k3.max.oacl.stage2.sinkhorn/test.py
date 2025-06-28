@@ -16,7 +16,6 @@ from model import create_model
 
 class Tester(SingleTester):
     def __init__(self, cfg):
-        # まず親の初期化（logger等のセットアップ）
         super().__init__(cfg)
         # dataloader
         start_time = time.time()
@@ -83,14 +82,12 @@ class Tester(SingleTester):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--snapshot', type=str, default=None, help='Path to pretrained weights')
-    parser.add_argument('--distance_filter', action='store_true', help='Enable distance filter for test point clouds')
-    parser.add_argument('--distance_threshold', type=float, default=None, help='Distance threshold for filtering points (meters)')
     args, unknown = parser.parse_known_args()
     cfg = make_cfg()
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
-    # cfgに追加
-    cfg.use_distance_filter = args.distance_filter
-    cfg.distance_threshold = args.distance_threshold
     tester = Tester(cfg)
     tester.run()
+
+if __name__ == '__main__':
+    main()
