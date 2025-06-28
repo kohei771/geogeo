@@ -60,7 +60,7 @@ def train_valid_data_loader(cfg, distributed):
     return train_loader, valid_loader, neighbor_limits
 
 
-def test_data_loader(cfg):
+def test_data_loader(cfg, use_distance_filter=False, distance_threshold=None):
     train_dataset = OdometryKittiPairDataset(
         cfg.data.dataset_root,
         'train',
@@ -71,6 +71,8 @@ def test_data_loader(cfg):
         augmentation_max_scale=cfg.train.augmentation_max_scale,
         augmentation_shift=cfg.train.augmentation_shift,
         augmentation_rotation=cfg.train.augmentation_rotation,
+        use_distance_filter=False,
+        distance_threshold=None,
     )
     neighbor_limits = calibrate_neighbors_stack_mode(
         train_dataset,
@@ -85,6 +87,8 @@ def test_data_loader(cfg):
         'test',
         point_limit=cfg.test.point_limit,
         use_augmentation=False,
+        use_distance_filter=use_distance_filter,
+        distance_threshold=distance_threshold,
     )
     test_loader = build_dataloader_stack_mode(
         test_dataset,

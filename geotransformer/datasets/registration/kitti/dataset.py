@@ -34,6 +34,8 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         return_corr_indices=False,
         matching_radius=None,
         use_intensity=False,  # intensity拡張用
+        use_distance_filter=False,  # 追加: 距離フィルタを使うか
+        distance_threshold=None,    # 追加: 距離閾値
     ):
         super(OdometryKittiPairDataset, self).__init__()
 
@@ -55,6 +57,8 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
 
         self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}.pkl'))
         self.use_intensity = use_intensity
+        self.use_distance_filter = use_distance_filter
+        self.distance_threshold = distance_threshold
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
@@ -88,6 +92,11 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
 
     def _load_point_cloud(self, file_name):
         points = np.load(file_name)
+        # 追加: 距離フィルタ
+        if self.use_distance_filter and self.distance_threshold is not None:
+            dists = np.linalg.norm(points[:, :3], axis=1)
+            mask = dists < self.distance_threshold
+            points = points[mask]
         if self.point_limit is not None and points.shape[0] > self.point_limit:
             indices = np.random.permutation(points.shape[0])[: self.point_limit]
             points = points[indices]

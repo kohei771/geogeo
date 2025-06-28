@@ -87,13 +87,36 @@ class Tester(SingleTester):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--snapshot', type=str, default=None, help='Path to pretrained weights')
+    parser.add_argument('--distance_filter', action='store_true', help='Enable distance filter for test point clouds')
+    parser.add_argument('--distance_threshold', type=float, default=None, help='Distance threshold for filtering points (meters)')
     args, unknown = parser.parse_known_args()
     cfg = make_cfg()
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
-    tester = Tester(cfg)
+    tester = TesterWithDistance(cfg, args)
     tester.run()
 
-
-if __name__ == '__main__':
-    main()
+class TesterWithDistance(Tester):
+    def __init__(self, cfg, args):
+        super(Tester, self).__init__(cfg)
+        # dataloader
+        start_time = time.time()
+        data_loader, neighbor_limits = test_data_loader(
+            cfg,
+            use_distance_filter=args.distance_filter,
+            distance_threshold=args.distance_threshold
+        )
+        loading_time = time.time() - start_time
+        message = f'Data loader created: {loading_time:.3f}s collapsed.'
+        self.logger.info(message)
+        message = f'Calibrate neighbors: {neighbor_limits}.'
+        self.logger.info(message)
+        self.register_loader(data_loader)
+        # model
+        model = create_model(cfg).cuda()
+        self.register_model(model)
+        # evaluator
+        self.evaluator = Evaluator(cfg).cuda()
+        # preparation
+        self.output_dir = osp.join(cfg.feature_dir)
+        ensure_dir(self.output_dir)
