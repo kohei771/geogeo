@@ -15,10 +15,13 @@ from model import create_model
 
 
 class Tester(SingleTester):
-    def __init__(self, cfg, use_distance_filter=False, distance_threshold=None):
+    def __init__(self, cfg):
+        # まず親の初期化（logger等のセットアップ）
         super().__init__(cfg)
         # dataloader
         start_time = time.time()
+        use_distance_filter = getattr(cfg, 'use_distance_filter', False)
+        distance_threshold = getattr(cfg, 'distance_threshold', None)
         data_loader, neighbor_limits = test_data_loader(
             cfg,
             use_distance_filter=use_distance_filter,
@@ -27,8 +30,7 @@ class Tester(SingleTester):
         loading_time = time.time() - start_time
         message = f'Data loader created: {loading_time:.3f}s collapsed.'
         self.logger.info(message)
-        message = f'Calibrate neighbors: {neighbor_limits}.'
-        self.logger.info(message)
+        self.logger.info(f'Calibrate neighbors: {neighbor_limits}.')
         self.register_loader(data_loader)
         # model
         model = create_model(cfg).cuda()
@@ -93,5 +95,8 @@ def main():
     cfg = make_cfg()
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
-    tester = Tester(cfg, use_distance_filter=args.distance_filter, distance_threshold=args.distance_threshold)
+    # cfgに追加
+    cfg.use_distance_filter = args.distance_filter
+    cfg.distance_threshold = args.distance_threshold
+    tester = Tester(cfg)
     tester.run()
