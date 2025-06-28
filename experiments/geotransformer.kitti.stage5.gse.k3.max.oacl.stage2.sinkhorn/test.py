@@ -20,13 +20,7 @@ class Tester(SingleTester):
         super().__init__(cfg)
         # dataloader
         start_time = time.time()
-        use_distance_filter = getattr(cfg, 'use_distance_filter', False)
-        distance_threshold = getattr(cfg, 'distance_threshold', None)
-        data_loader, neighbor_limits = test_data_loader(
-            cfg,
-            use_distance_filter=use_distance_filter,
-            distance_threshold=distance_threshold
-        )
+        data_loader, neighbor_limits = test_data_loader(cfg)
         loading_time = time.time() - start_time
         message = f'Data loader created: {loading_time:.3f}s collapsed.'
         self.logger.info(message)

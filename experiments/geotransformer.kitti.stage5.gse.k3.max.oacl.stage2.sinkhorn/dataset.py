@@ -60,7 +60,9 @@ def train_valid_data_loader(cfg, distributed):
     return train_loader, valid_loader, neighbor_limits
 
 
-def test_data_loader(cfg, use_distance_filter=False, distance_threshold=None):
+def test_data_loader(cfg):
+    use_distance_filter = getattr(cfg, 'use_distance_filter', False)
+    distance_threshold = getattr(cfg, 'distance_threshold', None)
     train_dataset = OdometryKittiPairDataset(
         cfg.data.dataset_root,
         'train',
