@@ -15,26 +15,26 @@ from model import create_model
 
 
 class Tester(SingleTester):
-    def __init__(self, cfg):
+    def __init__(self, cfg, use_distance_filter=False, distance_threshold=None):
         super().__init__(cfg)
-
         # dataloader
         start_time = time.time()
-        data_loader, neighbor_limits = test_data_loader(cfg)
+        data_loader, neighbor_limits = test_data_loader(
+            cfg,
+            use_distance_filter=use_distance_filter,
+            distance_threshold=distance_threshold
+        )
         loading_time = time.time() - start_time
         message = f'Data loader created: {loading_time:.3f}s collapsed.'
         self.logger.info(message)
         message = f'Calibrate neighbors: {neighbor_limits}.'
         self.logger.info(message)
         self.register_loader(data_loader)
-
         # model
         model = create_model(cfg).cuda()
         self.register_model(model)
-
         # evaluator
         self.evaluator = Evaluator(cfg).cuda()
-
         # preparation
         self.output_dir = osp.join(cfg.feature_dir)
         ensure_dir(self.output_dir)
@@ -93,30 +93,5 @@ def main():
     cfg = make_cfg()
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
-    tester = TesterWithDistance(cfg, args)
+    tester = Tester(cfg, use_distance_filter=args.distance_filter, distance_threshold=args.distance_threshold)
     tester.run()
-
-class TesterWithDistance(Tester):
-    def __init__(self, cfg, args):
-        super(Tester, self).__init__(cfg)
-        # dataloader
-        start_time = time.time()
-        data_loader, neighbor_limits = test_data_loader(
-            cfg,
-            use_distance_filter=args.distance_filter,
-            distance_threshold=args.distance_threshold
-        )
-        loading_time = time.time() - start_time
-        message = f'Data loader created: {loading_time:.3f}s collapsed.'
-        self.logger.info(message)
-        message = f'Calibrate neighbors: {neighbor_limits}.'
-        self.logger.info(message)
-        self.register_loader(data_loader)
-        # model
-        model = create_model(cfg).cuda()
-        self.register_model(model)
-        # evaluator
-        self.evaluator = Evaluator(cfg).cuda()
-        # preparation
-        self.output_dir = osp.join(cfg.feature_dir)
-        ensure_dir(self.output_dir)
