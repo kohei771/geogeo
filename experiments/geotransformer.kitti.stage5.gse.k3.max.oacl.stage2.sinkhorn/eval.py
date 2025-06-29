@@ -26,6 +26,7 @@ def make_parser():
     parser.add_argument('--method', choices=['lgr', 'ransac', 'svd'], required=True, help='registration method')
     parser.add_argument('--num_corr', type=int, default=None, help='number of correspondences for registration')
     parser.add_argument('--verbose', action='store_true', help='verbose mode')
+    parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
     return parser
 
 
@@ -192,9 +193,10 @@ def eval_one_epoch(args, cfg, logger):
 
 def main():
     parser = make_parser()
-    args = parser.parse_args()
-
-    cfg = make_cfg()
+    args, unknown = parser.parse_known_args()
+    # --near そのものを sys.argv から除去
+    sys.argv = [arg for arg in sys.argv if arg != '--near']
+    cfg = make_cfg(use_near=args.near)
     log_file = osp.join(cfg.log_dir, 'eval-{}.log'.format(time.strftime("%Y%m%d-%H%M%S")))
     logger = Logger(log_file=log_file)
 
