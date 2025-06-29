@@ -43,12 +43,11 @@ class Tester(SingleTester):
         # preparation
         self.output_dir = osp.join(cfg.feature_dir)
         ensure_dir(self.output_dir)
-        # vis_dirをvisualizations/{exp_name}/vis/に変更
-        vis_root = osp.join(osp.dirname(self.output_dir), '..', 'visualizations')
-        vis_root = osp.abspath(vis_root)
-        ensure_dir(vis_root)  # 追加: visualizationsフォルダを必ず作成
+        # vis_dirをワークスペース直下visualizations/{exp_name}/vis/に絶対パスで作成
         exp_name = osp.basename(self.output_dir)
-        self.vis_dir = osp.join(vis_root, exp_name, "vis")
+        vis_root = osp.join(os.getcwd(), "visualizations", exp_name)
+        ensure_dir(vis_root)
+        self.vis_dir = osp.join(vis_root, "vis")
         ensure_dir(self.vis_dir)
         self.visualized = False  # 可視化フラグ
 
