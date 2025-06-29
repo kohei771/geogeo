@@ -3,6 +3,7 @@ import os
 import os.path as osp
 import sys
 import time
+from datetime import datetime
 
 import matplotlib
 matplotlib.use('Agg')
@@ -45,12 +46,12 @@ class Tester(SingleTester):
         self.output_dir = osp.join(cfg.feature_dir)
         ensure_dir(self.output_dir)
         # vis_dirをワークスペース直下visualizations/{exp_name}/vis/に絶対パスで作成
-        exp_name = osp.basename(self.output_dir)
+        exp_name = cfg.exp_name  # 修正: cfg.exp_nameを使う
         vis_root = osp.join(os.getcwd(), "visualizations", exp_name)
         ensure_dir(vis_root)
         self.vis_dir = osp.join(vis_root, "vis")
         ensure_dir(self.vis_dir)
-        self.visualized = False  # 可視化フラグ
+        # self.visualized = False  # フラグ削除
 
     def test_step(self, iteration, data_dict):
         output_dict = self.model(data_dict)
@@ -98,23 +99,22 @@ class Tester(SingleTester):
         ref_frame = data_dict['ref_frame']
         src_frame = data_dict['src_frame']
 
-        # 可視化: 最初のサンプルのみ
-        if not self.visualized:
-            src = output_dict['src_points']  # (N,3) torch.Tensor or np.ndarray
-            ref = output_dict['ref_points']
-            est = output_dict['estimated_transform']  # (4,4)
-            if hasattr(src, 'cpu'):
-                src = src.cpu().numpy()
-            if hasattr(ref, 'cpu'):
-                ref = ref.cpu().numpy()
-            if hasattr(est, 'cpu'):
-                est = est.cpu().numpy()
-            # src点群に推定変換を適用
-            src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)  # (N,4)
-            src_aligned = (est @ src_h.T).T[:, :3]
-            save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_registration.png')
-            self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
-            self.visualized = True
+        # タイムスタンプ付きファイル名で毎回保存
+        src = output_dict['src_points']  # (N,3) torch.Tensor or np.ndarray
+        ref = output_dict['ref_points']
+        est = output_dict['estimated_transform']  # (4,4)
+        if hasattr(src, 'cpu'):
+            src = src.cpu().numpy()
+        if hasattr(ref, 'cpu'):
+            ref = ref.cpu().numpy()
+        if hasattr(est, 'cpu'):
+            est = est.cpu().numpy()
+        # src点群に推定変換を適用
+        src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)  # (N,4)
+        src_aligned = (est @ src_h.T).T[:, :3]
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_{timestamp}_registration.png')
+        self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
 
         file_name = osp.join(self.output_dir, f'{seq_id}_{src_frame}_{ref_frame}.npz')
         np.savez_compressed(
