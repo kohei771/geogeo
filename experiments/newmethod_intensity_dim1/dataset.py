@@ -69,6 +69,7 @@ def train_valid_data_loader(cfg, distributed):
         augmentation_shift=cfg.train.augmentation_shift,
         augmentation_rotation=cfg.train.augmentation_rotation,
         use_intensity=cfg.train.use_intensity,
+        use_near=getattr(cfg, 'use_near', False),
     )
     neighbor_limits = calibrate_neighbors_stack_mode(
         train_dataset,
@@ -96,6 +97,7 @@ def train_valid_data_loader(cfg, distributed):
         point_limit=cfg.train.point_limit,
         use_augmentation=False,
         use_intensity=cfg.train.use_intensity,
+        use_near=getattr(cfg, 'use_near', False),
     )
     valid_loader = build_dataloader_stack_mode(
         valid_dataset,
