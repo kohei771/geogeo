@@ -41,7 +41,8 @@ class Tester(SingleTester):
         # preparation
         self.output_dir = osp.join(cfg.feature_dir)
         ensure_dir(self.output_dir)
-
+        self.vis_dir = osp.join(self.output_dir, "vis")
+        ensure_dir(self.vis_dir)
         self.visualized = False  # 可視化フラグ
 
     def test_step(self, iteration, data_dict):
@@ -61,7 +62,7 @@ class Tester(SingleTester):
         message += ', nCorr: {}'.format(output_dict['corr_scores'].shape[0])
         return message
 
-    def plot_registration(self, src, ref, src_aligned=None, title=''):
+    def plot_registration(self, src, ref, src_aligned=None, title='', save_path=None):
         fig = plt.figure(figsize=(12, 6))
         ax1 = fig.add_subplot(121, projection='3d')
         ax1.scatter(src[:, 0], src[:, 1], src[:, 2], c='r', s=1, label='src')
@@ -80,7 +81,10 @@ class Tester(SingleTester):
 
         plt.suptitle(title)
         plt.tight_layout()
-        plt.show()
+        if save_path is not None:
+            plt.savefig(save_path, dpi=300)
+        # plt.show()
+        plt.close(fig)
 
     def after_test_step(self, iteration, data_dict, output_dict, result_dict):
         seq_id = data_dict['seq_id']
@@ -101,7 +105,8 @@ class Tester(SingleTester):
             # src点群に推定変換を適用
             src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)  # (N,4)
             src_aligned = (est @ src_h.T).T[:, :3]
-            self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}')
+            save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_registration.png')
+            self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
             self.visualized = True
 
         file_name = osp.join(self.output_dir, f'{seq_id}_{src_frame}_{ref_frame}.npz')
