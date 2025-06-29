@@ -15,8 +15,7 @@ class IntensityOnlyDataset(NewMethodIntensityPairDataset):
     but only uses intensity as features (input_dim=1), not (x,y,z,intensity).
     """
     def __init__(self, *args, use_near=False, **kwargs):
-        self.use_near = use_near
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, use_near=use_near, **kwargs)
 
     def __getitem__(self, index):
         data_dict = {}
