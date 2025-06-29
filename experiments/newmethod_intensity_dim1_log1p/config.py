@@ -92,7 +92,7 @@ _C.backbone.output_dim = 256
 # model - Global
 _C.model = edict()
 _C.model.ground_truth_matching_radius = 0.6
-_C.model.num_points_in_patch = 128
+_C.model.num_points_inpython experiments/newmethod_intensity_dim1_log1p/test.py --snapshot output/newmethod_intensity_dim1_log1p/snapshots/snapshot.pth.tar --nearpython experiments/newmethod_intensity_dim1_log1p/test.py --snapshot output/newmethod_intensity_dim1_log1p/snapshots/snapshot.pth.tar --near_patch = 128
 _C.model.num_sinkhorn_iterations = 100
 
 # model - Coarse Matching
@@ -145,13 +145,16 @@ _C.loss.weight_coarse_loss = 1.0
 _C.loss.weight_fine_loss = 1.0
 
 _C.snapshot = 'weights/geotransformer-kitti.pth.tar'
-def make_cfg():
-    return _C
+def make_cfg(use_near=False):
+    cfg = _C.copy()
+    cfg.use_near = use_near
+    return cfg
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--link_output', dest='link_output', action='store_true', help='link output dir')
+    parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
     args = parser.parse_args()
     return args
 

@@ -87,8 +87,9 @@ class Tester(SingleTester):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--snapshot', type=str, default=None, help='Path to pretrained weights')
+    parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
     args, unknown = parser.parse_known_args()
-    cfg = make_cfg()
+    cfg = make_cfg(use_near=args.near)
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
     tester = Tester(cfg)

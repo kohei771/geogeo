@@ -32,6 +32,7 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         return_corr_indices=False,
         matching_radius=None,
         use_intensity=False,  # intensity拡張用
+        use_near=False,       # 追加: nearデータ用
     ):
         super(OdometryKittiPairDataset, self).__init__()
         self.dataset_root = dataset_root
@@ -47,8 +48,13 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         self.matching_radius = matching_radius
         if self.return_corr_indices and self.matching_radius is None:
             raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
-        self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod.pkl'))
+        # ここでuse_nearに応じてmetadataファイル名を切り替え
+        if use_near:
+            self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod_near.pkl'))
+        else:
+            self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod.pkl'))
         self.use_intensity = use_intensity
+        self.use_near = use_near
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
