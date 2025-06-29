@@ -99,7 +99,7 @@ _C.model.num_sinkhorn_iterations = 100
 _C.coarse_matching = edict()
 _C.coarse_matching.num_targets = 64
 _C.coarse_matching.overlap_threshold = 0.1
-_C.coarse_matching.num_correspondences = 256
+_C.coarse_matching.num_correspondences = 128
 _C.coarse_matching.dual_normalization = True
 
 # model - GeoTransformer
