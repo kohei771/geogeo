@@ -133,19 +133,12 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         if self.return_corr_indices:
             corr_indices = get_correspondences(ref_points[:, :3], src_points[:, :3], transform, self.matching_radius)
             data_dict['corr_indices'] = corr_indices
-        # newmethod系は(x, y, z, intensity)でintensityのみ特徴量として使う
+        # newmethod系は(x, y, z, intensity)だが、特徴量としてintensityは使わず全て1
         if self.use_newmethod:
             data_dict['ref_points'] = ref_points[:, :3].astype(np.float32)
             data_dict['src_points'] = src_points[:, :3].astype(np.float32)
-            # intensity特徴量（なければ1）
-            if ref_points.shape[1] >= 4:
-                data_dict['ref_feats'] = ref_points[:, 3:4].astype(np.float32)
-            else:
-                data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
-            if src_points.shape[1] >= 4:
-                data_dict['src_feats'] = src_points[:, 3:4].astype(np.float32)
-            else:
-                data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
+            data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
+            data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
         else:
             # downsampled系は従来通り
             data_dict['ref_points'] = ref_points.astype(np.float32)
