@@ -33,27 +33,29 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         augmentation_rotation=1.0,
         return_corr_indices=False,
         matching_radius=None,
-        use_intensity=False,  # intensity拡張用
+        use_intensity=False,
+        use_near=False,  # 追加
     ):
         super(OdometryKittiPairDataset, self).__init__()
-
         self.dataset_root = dataset_root
         self.subset = subset
         self.point_limit = point_limit
-
         self.use_augmentation = use_augmentation
         self.augmentation_noise = augmentation_noise
         self.augmentation_min_scale = augmentation_min_scale
         self.augmentation_max_scale = augmentation_max_scale
         self.augmentation_shift = augmentation_shift
         self.augmentation_rotation = augmentation_rotation
-
         self.return_corr_indices = return_corr_indices
         self.matching_radius = matching_radius
         if self.return_corr_indices and self.matching_radius is None:
-            raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')        # メタデータを newmethod 用に切り替え
-        self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod.pkl'))
+            raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
+        if use_near:
+            self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod_near.pkl'))
+        else:
+            self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod.pkl'))
         self.use_intensity = use_intensity
+        self.use_near = use_near
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
@@ -98,11 +100,9 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         return ref_points, src_points, transform
 
     def _get_pcd_path(self, pcd_relpath):
-        # pcd_relpath: 'newmethod/00/000011.npy' の場合はそのまま使用
-        # pcd_relpath: '00/000011.npy' の場合は 'newmethod/' を前に付ける
-        if not pcd_relpath.startswith('newmethod/'):
-            pcd_relpath = 'newmethod/' + pcd_relpath
-        return osp.join(self.dataset_root, pcd_relpath)
+        if pcd_relpath.startswith('newmethod/') or pcd_relpath.startswith('newmethod_near/'):
+            return osp.join(self.dataset_root, pcd_relpath)
+        return osp.join(self.dataset_root, 'newmethod', pcd_relpath)
 
     def _load_point_cloud(self, file_name):
         points = np.load(file_name)
