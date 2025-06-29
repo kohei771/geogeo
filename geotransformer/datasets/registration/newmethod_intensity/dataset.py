@@ -28,6 +28,7 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
         return_corr_indices=False,
         matching_radius=None,
         use_intensity=False,  # intensity拡張用
+        use_near=False,       # 追加: nearデータ用
     ):
         super(NewMethodIntensityPairDataset, self).__init__()
 
@@ -45,9 +46,14 @@ class NewMethodIntensityPairDataset(torch.utils.data.Dataset):
         self.return_corr_indices = return_corr_indices
         self.matching_radius = matching_radius
         if self.return_corr_indices and self.matching_radius is None:
-            raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')        # メタデータを newmethod 用に切り替え
-        self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod.pkl'))
+            raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
+        # use_nearでmetadataファイル名を切り替え
+        if use_near:
+            self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod_near.pkl'))
+        else:
+            self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}_newmethod.pkl'))
         self.use_intensity = use_intensity
+        self.use_near = use_near
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
