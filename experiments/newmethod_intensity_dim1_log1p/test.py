@@ -90,8 +90,8 @@ def main():
     parser.add_argument('--snapshot', type=str, default=None, help='Path to pretrained weights')
     parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
     args, unknown = parser.parse_known_args()
-    # sys.argv から unknown を除去
-    sys.argv = [sys.argv[0]] + [arg for arg in sys.argv[1:] if arg not in unknown]
+    # --near そのものを sys.argv から除去
+    sys.argv = [arg for arg in sys.argv if arg != '--near']
     cfg = make_cfg(use_near=args.near)
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
