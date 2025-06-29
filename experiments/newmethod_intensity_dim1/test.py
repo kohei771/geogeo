@@ -46,6 +46,7 @@ class Tester(SingleTester):
         # vis_dirをvisualizations/{exp_name}/vis/に変更
         vis_root = osp.join(osp.dirname(self.output_dir), '..', 'visualizations')
         vis_root = osp.abspath(vis_root)
+        ensure_dir(vis_root)  # 追加: visualizationsフォルダを必ず作成
         exp_name = osp.basename(self.output_dir)
         self.vis_dir = osp.join(vis_root, exp_name, "vis")
         ensure_dir(self.vis_dir)
