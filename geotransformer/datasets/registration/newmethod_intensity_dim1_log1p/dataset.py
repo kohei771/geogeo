@@ -92,9 +92,11 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         return ref_points, src_points, transform
 
     def _get_pcd_path(self, pcd_relpath):
-        if not pcd_relpath.startswith('newmethod/'):
-            pcd_relpath = 'newmethod/' + pcd_relpath
-        return osp.join(self.dataset_root, pcd_relpath)
+        # すでに newmethod_near/ などで始まっていればそのまま
+        if pcd_relpath.startswith('newmethod/') or pcd_relpath.startswith('newmethod_near/'):
+            return osp.join(self.dataset_root, pcd_relpath)
+        # それ以外は従来通り
+        return osp.join(self.dataset_root, 'newmethod', pcd_relpath)
 
     def _load_point_cloud(self, file_name):
         points = np.load(file_name)
