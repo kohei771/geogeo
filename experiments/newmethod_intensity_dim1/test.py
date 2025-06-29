@@ -43,7 +43,11 @@ class Tester(SingleTester):
         # preparation
         self.output_dir = osp.join(cfg.feature_dir)
         ensure_dir(self.output_dir)
-        self.vis_dir = osp.join(self.output_dir, "vis")
+        # vis_dirをvisualizations/{exp_name}/vis/に変更
+        vis_root = osp.join(osp.dirname(self.output_dir), '..', 'visualizations')
+        vis_root = osp.abspath(vis_root)
+        exp_name = osp.basename(self.output_dir)
+        self.vis_dir = osp.join(vis_root, exp_name, "vis")
         ensure_dir(self.vis_dir)
         self.visualized = False  # 可視化フラグ
 
