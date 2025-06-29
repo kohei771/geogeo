@@ -85,6 +85,8 @@ def test_data_loader(cfg):
         'test',
         point_limit=cfg.test.point_limit,
         use_augmentation=False,
+        use_newmethod=getattr(cfg, 'use_newmethod', True),
+        use_near=getattr(cfg, 'use_near', False),
     )
     test_loader = build_dataloader_stack_mode(
         test_dataset,

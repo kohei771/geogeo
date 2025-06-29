@@ -143,8 +143,13 @@ _C.loss.weight_coarse_loss = 1.0
 _C.loss.weight_fine_loss = 1.0
 
 _C.snapshot = 'weights/geotransformer-kitti.pth.tar'
-def make_cfg():
-    return _C
+def make_cfg(use_newmethod=True, use_near=False):
+    cfg = _C.copy()
+    from easydict import EasyDict as edict
+    cfg = edict(cfg)
+    cfg.use_newmethod = use_newmethod
+    cfg.use_near = use_near
+    return cfg
 
 
 def parse_args():

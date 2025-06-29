@@ -33,32 +33,32 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         augmentation_rotation=1.0,
         return_corr_indices=False,
         matching_radius=None,
-        use_intensity=False,  # intensity拡張用
-        use_distance_filter=False,  # 追加: 距離フィルタを使うか
-        distance_threshold=None,    # 追加: 距離閾値
+        use_intensity=False,
+        use_distance_filter=False,
+        distance_threshold=None,
+        use_newmethod=False,  # 追加
+        use_near=False,       # 追加
     ):
         super(OdometryKittiPairDataset, self).__init__()
-
         self.dataset_root = dataset_root
         self.subset = subset
         self.point_limit = point_limit
-
         self.use_augmentation = use_augmentation
         self.augmentation_noise = augmentation_noise
         self.augmentation_min_scale = augmentation_min_scale
         self.augmentation_max_scale = augmentation_max_scale
         self.augmentation_shift = augmentation_shift
         self.augmentation_rotation = augmentation_rotation
-
         self.return_corr_indices = return_corr_indices
         self.matching_radius = matching_radius
         if self.return_corr_indices and self.matching_radius is None:
             raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
-
         self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}.pkl'))
         self.use_intensity = use_intensity
         self.use_distance_filter = use_distance_filter
         self.distance_threshold = distance_threshold
+        self.use_newmethod = use_newmethod
+        self.use_near = use_near
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
@@ -104,26 +104,29 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         data_dict = {}
-
         metadata = self.metadata[index]
         data_dict['seq_id'] = metadata['seq_id']
         data_dict['ref_frame'] = metadata['frame0']
         data_dict['src_frame'] = metadata['frame1']
-
-        ref_points = self._load_point_cloud(osp.join(self.dataset_root, metadata['pcd0']))
-        src_points = self._load_point_cloud(osp.join(self.dataset_root, metadata['pcd1']))
+        pcd0 = metadata['pcd0']
+        pcd1 = metadata['pcd1']
+        if self.use_newmethod:
+            if getattr(self, 'use_near', False):
+                pcd0 = pcd0.replace('downsampled/', 'newmethod_near/', 1)
+                pcd1 = pcd1.replace('downsampled/', 'newmethod_near/', 1)
+            else:
+                pcd0 = pcd0.replace('downsampled/', 'newmethod/', 1)
+                pcd1 = pcd1.replace('downsampled/', 'newmethod/', 1)
+        ref_points = self._load_point_cloud(osp.join(self.dataset_root, pcd0))
+        src_points = self._load_point_cloud(osp.join(self.dataset_root, pcd1))
         transform = metadata['transform']
-
         if self.use_augmentation:
             ref_points, src_points, transform = self._augment_point_cloud(ref_points, src_points, transform)
-
         if self.return_corr_indices:
             corr_indices = get_correspondences(ref_points, src_points, transform, self.matching_radius)
             data_dict['corr_indices'] = corr_indices
-
         data_dict['ref_points'] = ref_points.astype(np.float32)
         data_dict['src_points'] = src_points.astype(np.float32)
-        # intensity対応: 点群shapeが(N, 4)ならintensityを使う
         if self.use_intensity and ref_points.shape[1] >= 4:
             data_dict['ref_feats'] = ref_points[:, 3:4].astype(np.float32)
         else:
