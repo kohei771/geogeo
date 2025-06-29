@@ -122,6 +122,7 @@ def test_data_loader(cfg):
         augmentation_shift=cfg.train.augmentation_shift,
         augmentation_rotation=cfg.train.augmentation_rotation,
         use_intensity=cfg.train.use_intensity,
+        use_near=getattr(cfg, 'use_near', False),  # 追加
     )
     neighbor_limits = calibrate_neighbors_stack_mode(
         train_dataset,
@@ -137,50 +138,7 @@ def test_data_loader(cfg):
         point_limit=cfg.test.point_limit,
         use_augmentation=False,
         use_intensity=cfg.test.use_intensity,
-    )
-    test_loader = build_dataloader_stack_mode(
-        test_dataset,
-        registration_collate_fn_stack_mode,
-        cfg.backbone.num_stages,
-        cfg.backbone.init_voxel_size,
-        cfg.backbone.init_radius,
-        neighbor_limits,
-        batch_size=cfg.test.batch_size,
-        num_workers=cfg.test.num_workers,
-        shuffle=False,
-        distributed=distributed,
-    )
-
-    return test_loader, neighbor_limits
-
-
-def test_data_loader(cfg):
-    train_dataset = IntensityOnlyDataset(
-        cfg.data.dataset_root,
-        'train',
-        point_limit=cfg.train.point_limit,
-        use_augmentation=cfg.train.use_augmentation,
-        augmentation_noise=cfg.train.augmentation_noise,
-        augmentation_min_scale=cfg.train.augmentation_min_scale,
-        augmentation_max_scale=cfg.train.augmentation_max_scale,
-        augmentation_shift=cfg.train.augmentation_shift,
-        augmentation_rotation=cfg.train.augmentation_rotation,
-        use_intensity=cfg.train.use_intensity,
-    )
-    neighbor_limits = calibrate_neighbors_stack_mode(
-        train_dataset,
-        registration_collate_fn_stack_mode,
-        cfg.backbone.num_stages,
-        cfg.backbone.init_voxel_size,
-        cfg.backbone.init_radius,
-    )
-
-    test_dataset = IntensityOnlyDataset(
-        cfg.data.dataset_root,
-        'test',
-        point_limit=cfg.test.point_limit,
-        use_augmentation=False,
-        use_intensity=cfg.test.use_intensity,
+        use_near=getattr(cfg, 'use_near', False),  # 追加
     )
     test_loader = build_dataloader_stack_mode(
         test_dataset,
