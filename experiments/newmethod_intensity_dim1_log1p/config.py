@@ -163,8 +163,8 @@ def parse_args():
 
 
 def main():
-    cfg = make_cfg()
     args = parse_args()
+    cfg = make_cfg(use_near=args.near)
     if args.link_output:
         os.symlink(cfg.output_dir, 'output')
 
