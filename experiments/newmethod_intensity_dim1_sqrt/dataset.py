@@ -27,7 +27,6 @@ class IntensityOnlyDataset(NewMethodIntensityPairDataset):
 
         ref_pcd_path = self._get_pcd_path(metadata['pcd0'])
         src_pcd_path = self._get_pcd_path(metadata['pcd1'])
-        print(f"[DEBUG] loading ref: {ref_pcd_path}, src: {src_pcd_path}, use_near: {getattr(self, 'use_near', None)}")
         ref_points = self._load_point_cloud(ref_pcd_path)
         src_points = self._load_point_cloud(src_pcd_path)
         transform = metadata['transform']
