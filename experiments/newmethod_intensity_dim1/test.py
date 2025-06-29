@@ -103,16 +103,26 @@ class Tester(SingleTester):
             src = output_dict['src_points']
             ref = output_dict['ref_points']
             est = output_dict['estimated_transform']
+            print(f"[DEBUG] src shape: {getattr(src, 'shape', None)}, ref shape: {getattr(ref, 'shape', None)}")
             if hasattr(src, 'cpu'):
                 src = src.cpu().numpy()
             if hasattr(ref, 'cpu'):
                 ref = ref.cpu().numpy()
             if hasattr(est, 'cpu'):
                 est = est.cpu().numpy()
+            # サンプリング（最大5000点）
+            max_points = 5000
+            if src.shape[0] > max_points:
+                idx = np.random.choice(src.shape[0], max_points, replace=False)
+                src = src[idx]
+            if ref.shape[0] > max_points:
+                idx = np.random.choice(ref.shape[0], max_points, replace=False)
+                ref = ref[idx]
             src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)
             src_aligned = (est @ src_h.T).T[:, :3]
-            # 画像ファイル名の末尾にゼロ埋めiterationを付与
-            save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_registration_{iteration:06d}.png')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_registration_{iteration:06d}_{timestamp}.png')
+            print(f"[DEBUG] Saving visualization to: {save_path}")
             self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
             self.visualized = True
 
