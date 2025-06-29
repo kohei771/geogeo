@@ -92,7 +92,7 @@ _C.backbone.output_dim = 256
 # model - Global
 _C.model = edict()
 _C.model.ground_truth_matching_radius = 0.6
-_C.model.num_points_inpython experiments/newmethod_intensity_dim1_log1p/test.py --snapshot output/newmethod_intensity_dim1_log1p/snapshots/snapshot.pth.tar --nearpython experiments/newmethod_intensity_dim1_log1p/test.py --snapshot output/newmethod_intensity_dim1_log1p/snapshots/snapshot.pth.tar --near_patch = 128
+_C.model.num_points_in_patch = 128
 _C.model.num_sinkhorn_iterations = 100
 
 # model - Coarse Matching
