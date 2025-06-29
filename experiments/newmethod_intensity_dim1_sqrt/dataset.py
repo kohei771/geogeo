@@ -26,8 +26,11 @@ class IntensityOnlyDataset(NewMethodIntensityPairDataset):
         data_dict['ref_frame'] = metadata['frame0']
         data_dict['src_frame'] = metadata['frame1']
 
-        ref_points = self._load_point_cloud(self._get_pcd_path(metadata['pcd0']))
-        src_points = self._load_point_cloud(self._get_pcd_path(metadata['pcd1']))
+        ref_pcd_path = self._get_pcd_path(metadata['pcd0'])
+        src_pcd_path = self._get_pcd_path(metadata['pcd1'])
+        print(f"[DEBUG] loading ref: {ref_pcd_path}, src: {src_pcd_path}, use_near: {getattr(self, 'use_near', None)}")
+        ref_points = self._load_point_cloud(ref_pcd_path)
+        src_points = self._load_point_cloud(src_pcd_path)
         transform = metadata['transform']
 
         if self.use_augmentation:
@@ -39,20 +42,15 @@ class IntensityOnlyDataset(NewMethodIntensityPairDataset):
 
         data_dict['ref_points'] = ref_points[:, :3].astype(np.float32)  # Only xyz coordinates
         data_dict['src_points'] = src_points[:, :3].astype(np.float32)  # Only xyz coordinates
-        
         # Intensity-only features: use only intensity channel as feature (input_dim=1, sqrt変換)
         if self.use_intensity and ref_points.shape[1] >= 4:
             data_dict['ref_feats'] = np.sqrt(ref_points[:, 3:4].astype(np.float32))
         else:
-            # If no intensity, use dummy features
             data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
-            
         if self.use_intensity and src_points.shape[1] >= 4:
             data_dict['src_feats'] = np.sqrt(src_points[:, 3:4].astype(np.float32))
         else:
-            # If no intensity, use dummy features
             data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
-            
         data_dict['transform'] = transform.astype(np.float32)
         return data_dict
 
