@@ -53,7 +53,15 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         self.matching_radius = matching_radius
         if self.return_corr_indices and self.matching_radius is None:
             raise ValueError('"matching_radius" is None but "return_corr_indices" is set.')
-        self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', f'{subset}.pkl'))
+        # metadataパス切り替え
+        if use_newmethod:
+            if use_near:
+                meta_name = f'{subset}_newmethod_near.pkl'
+            else:
+                meta_name = f'{subset}_newmethod.pkl'
+        else:
+            meta_name = f'{subset}.pkl'
+        self.metadata = load_pickle(osp.join(self.dataset_root, 'metadata', meta_name))
         self.use_intensity = use_intensity
         self.use_distance_filter = use_distance_filter
         self.distance_threshold = distance_threshold
@@ -123,17 +131,26 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         if self.use_augmentation:
             ref_points, src_points, transform = self._augment_point_cloud(ref_points, src_points, transform)
         if self.return_corr_indices:
-            corr_indices = get_correspondences(ref_points, src_points, transform, self.matching_radius)
+            corr_indices = get_correspondences(ref_points[:, :3], src_points[:, :3], transform, self.matching_radius)
             data_dict['corr_indices'] = corr_indices
-        data_dict['ref_points'] = ref_points.astype(np.float32)
-        data_dict['src_points'] = src_points.astype(np.float32)
-        if self.use_intensity and ref_points.shape[1] >= 4:
-            data_dict['ref_feats'] = ref_points[:, 3:4].astype(np.float32)
+        # newmethod系は(x, y, z, intensity)でintensityのみ特徴量として使う
+        if self.use_newmethod:
+            data_dict['ref_points'] = ref_points[:, :3].astype(np.float32)
+            data_dict['src_points'] = src_points[:, :3].astype(np.float32)
+            # intensity特徴量（なければ1）
+            if ref_points.shape[1] >= 4:
+                data_dict['ref_feats'] = ref_points[:, 3:4].astype(np.float32)
+            else:
+                data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
+            if src_points.shape[1] >= 4:
+                data_dict['src_feats'] = src_points[:, 3:4].astype(np.float32)
+            else:
+                data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
         else:
+            # downsampled系は従来通り
+            data_dict['ref_points'] = ref_points.astype(np.float32)
+            data_dict['src_points'] = src_points.astype(np.float32)
             data_dict['ref_feats'] = np.ones((ref_points.shape[0], 1), dtype=np.float32)
-        if self.use_intensity and src_points.shape[1] >= 4:
-            data_dict['src_feats'] = src_points[:, 3:4].astype(np.float32)
-        else:
             data_dict['src_feats'] = np.ones((src_points.shape[0], 1), dtype=np.float32)
         data_dict['transform'] = transform.astype(np.float32)
         return data_dict
