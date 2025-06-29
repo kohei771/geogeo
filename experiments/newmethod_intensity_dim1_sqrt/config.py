@@ -156,13 +156,14 @@ def make_cfg(use_near=False):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--link_output', dest='link_output', action='store_true', help='link output dir')
+    parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')  # ←追加
     args = parser.parse_args()
     return args
 
 
 def main():
     args = parse_args()
-    cfg = make_cfg(use_near=args.near)
+    cfg = make_cfg(use_near=args.near)  # ←必ずuse_nearを渡す
     if args.link_output:
         os.symlink(cfg.output_dir, 'output')
 
