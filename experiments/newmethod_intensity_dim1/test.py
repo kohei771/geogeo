@@ -109,8 +109,8 @@ class Tester(SingleTester):
                 ref = ref.cpu().numpy()
             if hasattr(est, 'cpu'):
                 est = est.cpu().numpy()
-            # サンプリング（max_points=20000でnear有無問わず統一）
-            max_points = 20000
+            # サンプリング（max_points=50000でnear有無問わず統一）
+            max_points = 50000
             if src.shape[0] > max_points:
                 idx = np.random.choice(src.shape[0], max_points, replace=False)
                 src = src[idx]
