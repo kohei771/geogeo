@@ -91,21 +91,32 @@ class Tester(SingleTester):
         seq_id = data_dict['seq_id']
         ref_frame = data_dict['ref_frame']
         src_frame = data_dict['src_frame']
-        # タイムスタンプ付きファイル名で毎回保存
-        src = output_dict['src_points']
-        ref = output_dict['ref_points']
-        est = output_dict['estimated_transform']
-        if hasattr(src, 'cpu'):
-            src = src.cpu().numpy()
-        if hasattr(ref, 'cpu'):
-            ref = ref.cpu().numpy()
-        if hasattr(est, 'cpu'):
-            est = est.cpu().numpy()
-        src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)
-        src_aligned = (est @ src_h.T).T[:, :3]
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_{timestamp}_registration.png')
-        self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
+        # 最初の1回だけ画像保存
+        if not hasattr(self, 'visualized'):
+            self.visualized = False
+        if not self.visualized:
+            src = output_dict['src_points']
+            ref = output_dict['ref_points']
+            est = output_dict['estimated_transform']
+            if hasattr(src, 'cpu'):
+                src = src.cpu().numpy()
+            if hasattr(ref, 'cpu'):
+                ref = ref.cpu().numpy()
+            if hasattr(est, 'cpu'):
+                est = est.cpu().numpy()
+            max_points = 50000
+            if src.shape[0] > max_points:
+                idx = np.random.choice(src.shape[0], max_points, replace=False)
+                src = src[idx]
+            if ref.shape[0] > max_points:
+                idx = np.random.choice(ref.shape[0], max_points, replace=False)
+                ref = ref[idx]
+            src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)
+            src_aligned = (est @ src_h.T).T[:, :3]
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_registration_{timestamp}.png')
+            self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
+            self.visualized = True
         file_name = osp.join(self.output_dir, f'{seq_id}_{src_frame}_{ref_frame}.npz')
         np.savez_compressed(
             file_name,
