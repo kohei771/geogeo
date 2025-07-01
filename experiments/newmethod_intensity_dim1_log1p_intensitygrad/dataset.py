@@ -15,6 +15,9 @@ class IntensityOnlyDataset(NewMethodIntensityPairDataset):
     NewMethodIntensityPairDataset（v2）を継承し、インテンシティのみを特徴量として使う（input_dim=1）。
     """
     
+    def __len__(self):
+        return len(self.metadata)
+    
     def __getitem__(self, index):
         data_dict = {}
 

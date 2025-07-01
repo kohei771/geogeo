@@ -59,3 +59,6 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
         # ...existing code...
+
+    def __len__(self):
+        return len(self.metadata)
