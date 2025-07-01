@@ -151,6 +151,7 @@ class GeoTransformer(nn.Module):
         ref_grad_embed = np.zeros((ref_points_c.shape[0], ref_points_c.shape[0]), dtype=np.float32)
         for i in range(ref_points_c.shape[0]):
             knn_idx = ref_node_knn_indices_np[i]  # (K,)
+            knn_idx = np.clip(knn_idx, 0, ref_grad_f.shape[0] - 1)
             ref_grad_embed[i, :] = ref_grad_f[knn_idx].mean()  # (N_c,)
         ref_grad_embed = torch.from_numpy(ref_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(ref_points_c.device)  # (1, N_c, N_c, C)
         # src側
@@ -162,6 +163,7 @@ class GeoTransformer(nn.Module):
         src_grad_embed = np.zeros((src_points_c.shape[0], src_points_c.shape[0]), dtype=np.float32)
         for i in range(src_points_c.shape[0]):
             knn_idx = src_node_knn_indices_np[i]
+            knn_idx = np.clip(knn_idx, 0, src_grad_f.shape[0] - 1)
             src_grad_embed[i, :] = src_grad_f[knn_idx].mean()
         src_grad_embed = torch.from_numpy(src_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(src_points_c.device)
 
