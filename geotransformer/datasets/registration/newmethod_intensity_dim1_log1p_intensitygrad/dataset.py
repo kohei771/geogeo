@@ -60,5 +60,11 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
         rotation, translation = get_rotation_translation_from_transform(transform)
         # ...existing code...
 
+    def _get_pcd_path(self, rel_path):
+        return osp.join(self.dataset_root, rel_path)
+
+    def _load_point_cloud(self, path):
+        return np.load(path)
+
     def __len__(self):
         return len(self.metadata)
