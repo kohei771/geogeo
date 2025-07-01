@@ -117,6 +117,8 @@ class GeometricTransformer(nn.Module):
         src_points,
         ref_feats,
         src_feats,
+        ref_grad_embed=None,
+        src_grad_embed=None,
         ref_masks=None,
         src_masks=None,
     ):
@@ -127,6 +129,8 @@ class GeometricTransformer(nn.Module):
             src_points (Tensor): (B, M, 3)
             ref_feats (Tensor): (B, N, C)
             src_feats (Tensor): (B, M, C)
+            ref_grad_embed (Tensor): (B, N, M, C) or None
+            src_grad_embed (Tensor): (B, M, N, C) or None
             ref_masks (Optional[BoolTensor]): (B, N)
             src_masks (Optional[BoolTensor]): (B, M)
 
@@ -145,6 +149,8 @@ class GeometricTransformer(nn.Module):
             src_feats,
             ref_embeddings,
             src_embeddings,
+            ref_grad_embed=ref_grad_embed,
+            src_grad_embed=src_grad_embed,
             masks0=ref_masks,
             masks1=src_masks,
         )

@@ -16,7 +16,7 @@ from geotransformer.modules.transformer.output_layer import AttentionOutput
 
 
 class RPEMultiHeadAttention(nn.Module):
-    def __init__(self, d_model, num_heads, dropout=None):
+    def __init__(self, d_model, num_heads, dropout=None, fusion_hidden_dim=None):
         super(RPEMultiHeadAttention, self).__init__()
         if d_model % num_heads != 0:
             raise ValueError('`d_model` ({}) must be a multiple of `num_heads` ({}).'.format(d_model, num_heads))
@@ -29,17 +29,28 @@ class RPEMultiHeadAttention(nn.Module):
         self.proj_k = nn.Linear(self.d_model, self.d_model)
         self.proj_v = nn.Linear(self.d_model, self.d_model)
         self.proj_p = nn.Linear(self.d_model, self.d_model)
+        # 新規: 勾配特徴g用
+        self.proj_g = nn.Linear(self.d_model, self.d_model)
+        # concat用MLP
+        fusion_dim = self.d_model * 2
+        fusion_hidden = fusion_hidden_dim or self.d_model
+        self.fusion_mlp = nn.Sequential(
+            nn.Linear(fusion_dim, fusion_hidden),
+            nn.ReLU(),
+            nn.Linear(fusion_hidden, self.d_model)
+        )
 
         self.dropout = build_dropout_layer(dropout)
 
-    def forward(self, input_q, input_k, input_v, embed_qk, key_weights=None, key_masks=None, attention_factors=None):
-        r"""Scaled Dot-Product Attention with Pre-computed Relative Positional Embedding (forward)
+    def forward(self, input_q, input_k, input_v, embed_qk, embed_gk=None, key_weights=None, key_masks=None, attention_factors=None):
+        r"""Scaled Dot-Product Attention with Pre-computed Relative Positional Embedding and Gradient Embedding (forward)
 
         Args:
             input_q: torch.Tensor (B, N, C)
             input_k: torch.Tensor (B, M, C)
             input_v: torch.Tensor (B, M, C)
             embed_qk: torch.Tensor (B, N, M, C), relative positional embedding
+            embed_gk: torch.Tensor (B, N, M, C), intensity gradient embedding
             key_weights: torch.Tensor (B, M), soft masks for the keys
             key_masks: torch.Tensor (B, M), True if ignored, False if preserved
             attention_factors: torch.Tensor (B, N, M)
@@ -52,10 +63,15 @@ class RPEMultiHeadAttention(nn.Module):
         k = rearrange(self.proj_k(input_k), 'b m (h c) -> b h m c', h=self.num_heads)
         v = rearrange(self.proj_v(input_v), 'b m (h c) -> b h m c', h=self.num_heads)
         p = rearrange(self.proj_p(embed_qk), 'b n m (h c) -> b h n m c', h=self.num_heads)
-
-        attention_scores_p = torch.einsum('bhnc,bhnmc->bhnm', q, p)
+        if embed_gk is not None:
+            g = rearrange(self.proj_g(embed_gk), 'b n m (h c) -> b h n m c', h=self.num_heads)
+            fusion = torch.cat([p, g], dim=-1)  # (b, h, n, m, 2c)
+            fusion = self.fusion_mlp(fusion)   # (b, h, n, m, c)
+            attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, fusion)
+        else:
+            attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, p)
         attention_scores_e = torch.einsum('bhnc,bhmc->bhnm', q, k)
-        attention_scores = (attention_scores_e + attention_scores_p) / self.d_model_per_head ** 0.5
+        attention_scores = (attention_scores_e + attention_scores_pg) / self.d_model_per_head ** 0.5
         if attention_factors is not None:
             attention_scores = attention_factors.unsqueeze(1) * attention_scores
         if key_weights is not None:
@@ -85,6 +101,7 @@ class RPEAttentionLayer(nn.Module):
         input_states,
         memory_states,
         position_states,
+        grad_embed=None,
         memory_weights=None,
         memory_masks=None,
         attention_factors=None,
@@ -94,6 +111,7 @@ class RPEAttentionLayer(nn.Module):
             memory_states,
             memory_states,
             position_states,
+            embed_gk=grad_embed,
             key_weights=memory_weights,
             key_masks=memory_masks,
             attention_factors=attention_factors,
@@ -115,6 +133,7 @@ class RPETransformerLayer(nn.Module):
         input_states,
         memory_states,
         position_states,
+        grad_embed=None,
         memory_weights=None,
         memory_masks=None,
         attention_factors=None,
@@ -123,6 +142,7 @@ class RPETransformerLayer(nn.Module):
             input_states,
             memory_states,
             position_states,
+            grad_embed=grad_embed,
             memory_weights=memory_weights,
             memory_masks=memory_masks,
             attention_factors=attention_factors,

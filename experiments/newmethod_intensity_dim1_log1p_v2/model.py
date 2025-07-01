@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.neighbors import NearestNeighbors
+import numpy as np
 from IPython import embed
 
 from geotransformer.modules.ops import point_to_node_partition, index_select
@@ -14,6 +16,15 @@ from geotransformer.modules.geotransformer import (
 )
 
 from backbone import KPConvFPN
+
+
+def compute_intensity_gradient(points_np, intensity_np, k=1):
+    # points_np: (N, 3), intensity_np: (N,)
+    nbrs = NearestNeighbors(n_neighbors=k+1, algorithm='auto').fit(points_np)
+    distances, indices = nbrs.kneighbors(points_np)
+    grad = np.abs(intensity_np[:, None] - intensity_np[indices[:, 1:]])
+    grad_mean = grad.mean(axis=1)  # (N,)
+    return grad_mean
 
 
 class GeoTransformer(nn.Module):
@@ -129,6 +140,31 @@ class GeoTransformer(nn.Module):
         feats_c = feats_list[-1]
         feats_f = feats_list[0]
 
+        # --- 勾配特徴計算 ---
+        # ref側
+        ref_points_f_np = ref_points_f.cpu().numpy()
+        ref_feats_f_np = feats_f[:ref_length_f].cpu().numpy()
+        ref_intensity = ref_feats_f_np[:, 0]  # 1次元前提
+        ref_grad_f = compute_intensity_gradient(ref_points_f_np, ref_intensity, k=1)  # (N_f,)
+        # スーパーポイントごとに平均
+        ref_node_knn_indices_np = ref_node_knn_indices.cpu().numpy()
+        ref_grad_embed = np.zeros((ref_points_c.shape[0], ref_points_c.shape[0]), dtype=np.float32)
+        for i in range(ref_points_c.shape[0]):
+            knn_idx = ref_node_knn_indices_np[i]  # (K,)
+            ref_grad_embed[i, :] = ref_grad_f[knn_idx].mean()  # (N_c,)
+        ref_grad_embed = torch.from_numpy(ref_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(ref_points_c.device)  # (1, N_c, N_c, C)
+        # src側
+        src_points_f_np = src_points_f.cpu().numpy()
+        src_feats_f_np = feats_f[ref_length_f:].cpu().numpy()
+        src_intensity = src_feats_f_np[:, 0]
+        src_grad_f = compute_intensity_gradient(src_points_f_np, src_intensity, k=1)
+        src_node_knn_indices_np = src_node_knn_indices.cpu().numpy()
+        src_grad_embed = np.zeros((src_points_c.shape[0], src_points_c.shape[0]), dtype=np.float32)
+        for i in range(src_points_c.shape[0]):
+            knn_idx = src_node_knn_indices_np[i]
+            src_grad_embed[i, :] = src_grad_f[knn_idx].mean()
+        src_grad_embed = torch.from_numpy(src_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(src_points_c.device)
+
         # 3. Conditional Transformer
         ref_feats_c = feats_c[:ref_length_c]
         src_feats_c = feats_c[ref_length_c:]
@@ -137,6 +173,8 @@ class GeoTransformer(nn.Module):
             src_points_c.unsqueeze(0),
             ref_feats_c.unsqueeze(0),
             src_feats_c.unsqueeze(0),
+            ref_grad_embed=ref_grad_embed,
+            src_grad_embed=src_grad_embed,
         )
         ref_feats_c_norm = F.normalize(ref_feats_c.squeeze(0), p=2, dim=1)
         src_feats_c_norm = F.normalize(src_feats_c.squeeze(0), p=2, dim=1)

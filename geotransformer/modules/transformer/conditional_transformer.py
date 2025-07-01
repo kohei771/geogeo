@@ -94,12 +94,12 @@ class RPEConditionalTransformer(nn.Module):
         self.return_attention_scores = return_attention_scores
         self.parallel = parallel
 
-    def forward(self, feats0, feats1, embeddings0, embeddings1, masks0=None, masks1=None):
+    def forward(self, feats0, feats1, embeddings0, embeddings1, ref_grad_embed=None, src_grad_embed=None, masks0=None, masks1=None):
         attention_scores = []
         for i, block in enumerate(self.blocks):
             if block == 'self':
-                feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, memory_masks=masks0)
-                feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, memory_masks=masks1)
+                feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, grad_embed=ref_grad_embed, memory_masks=masks0)
+                feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, grad_embed=src_grad_embed, memory_masks=masks1)
             else:
                 if self.parallel:
                     new_feats0, scores0 = self.layers[i](feats0, feats1, memory_masks=masks1)
