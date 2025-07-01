@@ -75,11 +75,10 @@ class BaseTester(abc.ABC):
         # cfgがあればそちらを優先
         if hasattr(self, 'cfg') and hasattr(self.cfg, 'exp_name'):
             exp_name = self.cfg.exp_name
-        # intensitygrad系ならstrict=False, それ以外はTrue
+        # intensitygrad系ならstrict=False（新しい重み構造用）、それ以外はstrict=True（旧手法の重み構造用）
         if exp_name is not None and 'intensitygrad' in exp_name:
             strict_flag = False
         else:
-            
             strict_flag = True
         self.model.load_state_dict(state_dict['model'], strict=strict_flag)
         self.logger.info(f'Model has been loaded. (strict={strict_flag})')
