@@ -149,11 +149,12 @@ class GeoTransformer(nn.Module):
         ref_grad_f = compute_intensity_gradient_torch(ref_points_f, ref_intensity, k=1)  # (N_f,)
         ref_grad_embed = []
         for i in range(ref_points_c.shape[0]):
-            knn_idx = ref_node_knn_indices[i]  # (K,)
+            knn_idx = ref_node_knn_indices[i]
+            knn_idx = torch.clamp(knn_idx, 0, ref_grad_f.shape[0] - 1)
             knn_grad = ref_grad_f[knn_idx]
             knn_intensity = ref_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
-            if valid_mask.any():
+            if valid_mask.any().item():
                 ref_grad_embed.append(knn_grad[valid_mask].mean())
             else:
                 ref_grad_embed.append(torch.tensor(0.0, device=ref_grad_f.device))
@@ -166,10 +167,11 @@ class GeoTransformer(nn.Module):
         src_grad_embed = []
         for i in range(src_points_c.shape[0]):
             knn_idx = src_node_knn_indices[i]
+            knn_idx = torch.clamp(knn_idx, 0, src_grad_f.shape[0] - 1)
             knn_grad = src_grad_f[knn_idx]
             knn_intensity = src_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
-            if valid_mask.any():
+            if valid_mask.any().item():
                 src_grad_embed.append(knn_grad[valid_mask].mean())
             else:
                 src_grad_embed.append(torch.tensor(0.0, device=src_grad_f.device))
