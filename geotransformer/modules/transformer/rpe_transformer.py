@@ -30,13 +30,6 @@ class RPEMultiHeadAttention(nn.Module):
         self.use_grad = use_grad
         if self.use_grad:
             self.proj_g = nn.Linear(self.d_model, self.d_model)
-            fusion_dim = self.d_model * 2
-            fusion_hidden = fusion_hidden_dim or self.d_model
-            self.fusion_mlp = nn.Sequential(
-                nn.Linear(fusion_dim, fusion_hidden),
-                nn.ReLU(),
-                nn.Linear(fusion_hidden, self.d_model)
-            )
         self.dropout = build_dropout_layer(dropout)
 
     def forward(self, input_q, input_k, input_v, embed_qk, embed_gk=None, key_weights=None, key_masks=None, attention_factors=None):
@@ -62,9 +55,9 @@ class RPEMultiHeadAttention(nn.Module):
         p = rearrange(self.proj_p(embed_qk), 'b n m (h c) -> b h n m c', h=self.num_heads)
         if self.use_grad and embed_gk is not None:
             g = rearrange(self.proj_g(embed_gk), 'b n m (h c) -> b h n m c', h=self.num_heads)
-            fusion = torch.cat([p, g], dim=-1)
-            fusion = self.fusion_mlp(fusion)
-            attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, fusion)
+            attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, p)
+            attention_scores_g = torch.einsum('bhnc,bhnmc->bhnm', q, g)
+            attention_scores_pg = attention_scores_pg + attention_scores_g
         else:
             attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, p)
         attention_scores_e = torch.einsum('bhnc,bhmc->bhnm', q, k)
