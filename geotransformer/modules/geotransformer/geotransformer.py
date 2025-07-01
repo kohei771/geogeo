@@ -86,6 +86,7 @@ class GeometricTransformer(nn.Module):
         dropout=None,
         activation_fn='ReLU',
         reduction_a='max',
+        use_grad=False,  # 追加: intensitygrad系かどうか
     ):
         r"""Geometric Transformer (GeoTransformer).
 
@@ -108,6 +109,8 @@ class GeometricTransformer(nn.Module):
         self.in_proj = nn.Linear(input_dim, hidden_dim)
         self.transformer = RPEConditionalTransformer(
             blocks, hidden_dim, num_heads, dropout=dropout, activation_fn=activation_fn
+        ) if not use_grad else RPEConditionalTransformer(
+            blocks, hidden_dim, num_heads, dropout=dropout, activation_fn=activation_fn, use_grad=True
         )
         self.out_proj = nn.Linear(hidden_dim, output_dim)
 

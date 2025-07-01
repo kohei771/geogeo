@@ -16,30 +16,27 @@ from geotransformer.modules.transformer.output_layer import AttentionOutput
 
 
 class RPEMultiHeadAttention(nn.Module):
-    def __init__(self, d_model, num_heads, dropout=None, fusion_hidden_dim=None):
+    def __init__(self, d_model, num_heads, dropout=None, fusion_hidden_dim=None, use_grad=False):
         super(RPEMultiHeadAttention, self).__init__()
         if d_model % num_heads != 0:
             raise ValueError('`d_model` ({}) must be a multiple of `num_heads` ({}).'.format(d_model, num_heads))
-
         self.d_model = d_model
         self.num_heads = num_heads
         self.d_model_per_head = d_model // num_heads
-
         self.proj_q = nn.Linear(self.d_model, self.d_model)
         self.proj_k = nn.Linear(self.d_model, self.d_model)
         self.proj_v = nn.Linear(self.d_model, self.d_model)
         self.proj_p = nn.Linear(self.d_model, self.d_model)
-        # 新規: 勾配特徴g用
-        self.proj_g = nn.Linear(self.d_model, self.d_model)
-        # concat用MLP
-        fusion_dim = self.d_model * 2
-        fusion_hidden = fusion_hidden_dim or self.d_model
-        self.fusion_mlp = nn.Sequential(
-            nn.Linear(fusion_dim, fusion_hidden),
-            nn.ReLU(),
-            nn.Linear(fusion_hidden, self.d_model)
-        )
-
+        self.use_grad = use_grad
+        if self.use_grad:
+            self.proj_g = nn.Linear(self.d_model, self.d_model)
+            fusion_dim = self.d_model * 2
+            fusion_hidden = fusion_hidden_dim or self.d_model
+            self.fusion_mlp = nn.Sequential(
+                nn.Linear(fusion_dim, fusion_hidden),
+                nn.ReLU(),
+                nn.Linear(fusion_hidden, self.d_model)
+            )
         self.dropout = build_dropout_layer(dropout)
 
     def forward(self, input_q, input_k, input_v, embed_qk, embed_gk=None, key_weights=None, key_masks=None, attention_factors=None):
@@ -63,10 +60,10 @@ class RPEMultiHeadAttention(nn.Module):
         k = rearrange(self.proj_k(input_k), 'b m (h c) -> b h m c', h=self.num_heads)
         v = rearrange(self.proj_v(input_v), 'b m (h c) -> b h m c', h=self.num_heads)
         p = rearrange(self.proj_p(embed_qk), 'b n m (h c) -> b h n m c', h=self.num_heads)
-        if embed_gk is not None:
+        if self.use_grad and embed_gk is not None:
             g = rearrange(self.proj_g(embed_gk), 'b n m (h c) -> b h n m c', h=self.num_heads)
-            fusion = torch.cat([p, g], dim=-1)  # (b, h, n, m, 2c)
-            fusion = self.fusion_mlp(fusion)   # (b, h, n, m, c)
+            fusion = torch.cat([p, g], dim=-1)
+            fusion = self.fusion_mlp(fusion)
             attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, fusion)
         else:
             attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, p)
@@ -80,18 +77,15 @@ class RPEMultiHeadAttention(nn.Module):
             attention_scores = attention_scores.masked_fill(key_masks.unsqueeze(1).unsqueeze(1), float('-inf'))
         attention_scores = F.softmax(attention_scores, dim=-1)
         attention_scores = self.dropout(attention_scores)
-
         hidden_states = torch.matmul(attention_scores, v)
-
         hidden_states = rearrange(hidden_states, 'b h n c -> b n (h c)')
-
         return hidden_states, attention_scores
 
 
 class RPEAttentionLayer(nn.Module):
-    def __init__(self, d_model, num_heads, dropout=None):
+    def __init__(self, d_model, num_heads, dropout=None, use_grad=False):
         super(RPEAttentionLayer, self).__init__()
-        self.attention = RPEMultiHeadAttention(d_model, num_heads, dropout=dropout)
+        self.attention = RPEMultiHeadAttention(d_model, num_heads, dropout=dropout, use_grad=use_grad)
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = build_dropout_layer(dropout)
         self.norm = nn.LayerNorm(d_model)
@@ -123,9 +117,9 @@ class RPEAttentionLayer(nn.Module):
 
 
 class RPETransformerLayer(nn.Module):
-    def __init__(self, d_model, num_heads, dropout=None, activation_fn='ReLU'):
+    def __init__(self, d_model, num_heads, dropout=None, activation_fn='ReLU', use_grad=False):
         super(RPETransformerLayer, self).__init__()
-        self.attention = RPEAttentionLayer(d_model, num_heads, dropout=dropout)
+        self.attention = RPEAttentionLayer(d_model, num_heads, dropout=dropout, use_grad=use_grad)
         self.output = AttentionOutput(d_model, dropout=dropout, activation_fn=activation_fn)
 
     def forward(

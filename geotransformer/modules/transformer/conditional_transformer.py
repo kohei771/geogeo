@@ -80,6 +80,7 @@ class RPEConditionalTransformer(nn.Module):
         activation_fn='ReLU',
         return_attention_scores=False,
         parallel=False,
+        use_grad=False,  # 追加
     ):
         super(RPEConditionalTransformer, self).__init__()
         self.blocks = blocks
@@ -87,19 +88,20 @@ class RPEConditionalTransformer(nn.Module):
         for block in self.blocks:
             _check_block_type(block)
             if block == 'self':
-                layers.append(RPETransformerLayer(d_model, num_heads, dropout=dropout, activation_fn=activation_fn))
+                layers.append(RPETransformerLayer(d_model, num_heads, dropout=dropout, activation_fn=activation_fn, use_grad=use_grad))
             else:
                 layers.append(TransformerLayer(d_model, num_heads, dropout=dropout, activation_fn=activation_fn))
         self.layers = nn.ModuleList(layers)
         self.return_attention_scores = return_attention_scores
         self.parallel = parallel
+        self.use_grad = use_grad
 
     def forward(self, feats0, feats1, embeddings0, embeddings1, ref_grad_embed=None, src_grad_embed=None, masks0=None, masks1=None):
         attention_scores = []
         for i, block in enumerate(self.blocks):
             if block == 'self':
-                feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, grad_embed=ref_grad_embed, memory_masks=masks0)
-                feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, grad_embed=src_grad_embed, memory_masks=masks1)
+                feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, grad_embed=ref_grad_embed if self.use_grad else None, memory_masks=masks0)
+                feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, grad_embed=src_grad_embed if self.use_grad else None, memory_masks=masks1)
             else:
                 if self.parallel:
                     new_feats0, scores0 = self.layers[i](feats0, feats1, memory_masks=masks1)
