@@ -1,6 +1,6 @@
 import numpy as np
 
-from geotransformer.datasets.registration.newmethod_intensity_dim1_log1p_v2.dataset import OdometryKittiPairDataset as NewMethodIntensityPairDataset
+from geotransformer.datasets.registration.newmethod_intensity_dim1_log1p_intensitygrad.dataset import OdometryKittiPairDataset as NewMethodIntensityPairDataset
 from geotransformer.utils.data import (
     registration_collate_fn_stack_mode,
     calibrate_neighbors_stack_mode,
@@ -11,7 +11,7 @@ from geotransformer.utils.registration import get_correspondences
 
 class IntensityOnlyDataset(NewMethodIntensityPairDataset):
     """
-    Intensity-only dataset for newmethod_intensity_dim1_log1p_v2.
+    Intensity-only dataset for newmethod_intensity_dim1_log1p_intensitygrad.
     NewMethodIntensityPairDataset（v2）を継承し、インテンシティのみを特徴量として使う（input_dim=1）。
     """
     

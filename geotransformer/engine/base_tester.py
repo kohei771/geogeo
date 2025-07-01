@@ -66,8 +66,22 @@ class BaseTester(abc.ABC):
         self.logger.info('Loading from "{}".'.format(snapshot))
         state_dict = torch.load(snapshot, map_location=torch.device('cpu'))
         assert 'model' in state_dict, 'No model can be loaded.'
-        self.model.load_state_dict(state_dict['model'], strict=True)
-        self.logger.info('Model has been loaded.')
+        # 手法名でstrict分岐
+        exp_name = getattr(self, 'exp_name', None)
+        if exp_name is None and hasattr(self, 'args') and hasattr(self.args, 'exp_name'):
+            exp_name = self.args.exp_name
+        if exp_name is None and hasattr(self, 'cfg') and hasattr(self.cfg, 'exp_name'):
+            exp_name = self.cfg.exp_name
+        # cfgがあればそちらを優先
+        if hasattr(self, 'cfg') and hasattr(self.cfg, 'exp_name'):
+            exp_name = self.cfg.exp_name
+        # intensitygrad系ならstrict=False, それ以外はTrue
+        if exp_name is not None and 'intensitygrad' in exp_name:
+            strict_flag = False
+        else:
+            strict_flag = True
+        self.model.load_state_dict(state_dict['model'], strict=strict_flag)
+        self.logger.info(f'Model has been loaded. (strict={strict_flag})')
 
     def register_model(self, model):
         r"""Register model. DDP is automatically used."""
