@@ -79,6 +79,7 @@ class BaseTester(abc.ABC):
         if exp_name is not None and 'intensitygrad' in exp_name:
             strict_flag = False
         else:
+            
             strict_flag = True
         self.model.load_state_dict(state_dict['model'], strict=strict_flag)
         self.logger.info(f'Model has been loaded. (strict={strict_flag})')
