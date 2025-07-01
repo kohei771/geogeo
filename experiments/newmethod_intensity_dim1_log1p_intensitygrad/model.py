@@ -142,23 +142,23 @@ class GeoTransformer(nn.Module):
 
         # --- 勾配特徴計算 ---
         # ref側
-        ref_points_f_np = ref_points_f.cpu().numpy()
-        ref_feats_f_np = feats_f[:ref_length_f].cpu().numpy()
+        ref_points_f_np = ref_points_f.cpu().detach().numpy()
+        ref_feats_f_np = feats_f[:ref_length_f].cpu().detach().numpy()
         ref_intensity = ref_feats_f_np[:, 0]  # 1次元前提
         ref_grad_f = compute_intensity_gradient(ref_points_f_np, ref_intensity, k=1)  # (N_f,)
         # スーパーポイントごとに平均
-        ref_node_knn_indices_np = ref_node_knn_indices.cpu().numpy()
+        ref_node_knn_indices_np = ref_node_knn_indices.cpu().detach().numpy()
         ref_grad_embed = np.zeros((ref_points_c.shape[0], ref_points_c.shape[0]), dtype=np.float32)
         for i in range(ref_points_c.shape[0]):
             knn_idx = ref_node_knn_indices_np[i]  # (K,)
             ref_grad_embed[i, :] = ref_grad_f[knn_idx].mean()  # (N_c,)
         ref_grad_embed = torch.from_numpy(ref_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(ref_points_c.device)  # (1, N_c, N_c, C)
         # src側
-        src_points_f_np = src_points_f.cpu().numpy()
-        src_feats_f_np = feats_f[ref_length_f:].cpu().numpy()
+        src_points_f_np = src_points_f.cpu().detach().numpy()
+        src_feats_f_np = feats_f[ref_length_f:].cpu().detach().numpy()
         src_intensity = src_feats_f_np[:, 0]
         src_grad_f = compute_intensity_gradient(src_points_f_np, src_intensity, k=1)
-        src_node_knn_indices_np = src_node_knn_indices.cpu().numpy()
+        src_node_knn_indices_np = src_node_knn_indices.cpu().detach().numpy()
         src_grad_embed = np.zeros((src_points_c.shape[0], src_points_c.shape[0]), dtype=np.float32)
         for i in range(src_points_c.shape[0]):
             knn_idx = src_node_knn_indices_np[i]
