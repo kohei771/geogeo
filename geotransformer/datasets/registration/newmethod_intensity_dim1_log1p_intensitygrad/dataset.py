@@ -58,7 +58,8 @@ class OdometryKittiPairDataset(torch.utils.data.Dataset):
 
     def _augment_point_cloud(self, ref_points, src_points, transform):
         rotation, translation = get_rotation_translation_from_transform(transform)
-        # ...existing code...
+        # ...既存のaugmentation処理...
+        return ref_points, src_points, transform
 
     def _get_pcd_path(self, rel_path):
         return osp.join(self.dataset_root, rel_path)
