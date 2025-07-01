@@ -18,12 +18,15 @@ from geotransformer.modules.geotransformer import (
 from backbone import KPConvFPN
 
 
-def compute_intensity_gradient(points_np, intensity_np, k=1):
-    # points_np: (N, 3), intensity_np: (N,)
-    nbrs = NearestNeighbors(n_neighbors=k+1, algorithm='auto').fit(points_np)
-    distances, indices = nbrs.kneighbors(points_np)
-    grad = np.abs(intensity_np[:, None] - intensity_np[indices[:, 1:]])
-    grad_mean = grad.mean(axis=1)  # (N,)
+def compute_intensity_gradient_torch(points, intensity, k=1):
+    # points: (N, 3), intensity: (N,)
+    # 距離行列
+    dist = torch.cdist(points, points)  # (N, N)
+    knn_idx = dist.topk(k=k+1, largest=False).indices[:, 1:]  # (N, k)
+    knn_intensity = intensity[knn_idx]  # (N, k)
+    grad = (intensity.unsqueeze(1) - knn_intensity).abs()  # (N, k)
+    grad_mean = grad.mean(dim=1)  # (N,)
+    grad_mean = torch.where(intensity == 0, torch.zeros_like(grad_mean), grad_mean)
     return grad_mean
 
 
@@ -140,32 +143,39 @@ class GeoTransformer(nn.Module):
         feats_c = feats_list[-1]
         feats_f = feats_list[0]
 
-        # --- 勾配特徴計算 ---
+        # --- 勾配特徴計算（PyTorch/GPU化） ---
         # ref側
-        ref_points_f_np = ref_points_f.cpu().detach().numpy()
-        ref_feats_f_np = feats_f[:ref_length_f].cpu().detach().numpy()
-        ref_intensity = ref_feats_f_np[:, 0]  # 1次元前提
-        ref_grad_f = compute_intensity_gradient(ref_points_f_np, ref_intensity, k=1)  # (N_f,)
-        # スーパーポイントごとに平均
-        ref_node_knn_indices_np = ref_node_knn_indices.cpu().detach().numpy()
-        ref_grad_embed = np.zeros((ref_points_c.shape[0], ref_points_c.shape[0]), dtype=np.float32)
+        ref_intensity = feats_f[:ref_length_f][:, 0]  # (N_f,)
+        ref_grad_f = compute_intensity_gradient_torch(ref_points_f, ref_intensity, k=1)  # (N_f,)
+        ref_grad_embed = []
         for i in range(ref_points_c.shape[0]):
-            knn_idx = ref_node_knn_indices_np[i]  # (K,)
-            knn_idx = np.clip(knn_idx, 0, ref_grad_f.shape[0] - 1)
-            ref_grad_embed[i, :] = ref_grad_f[knn_idx].mean()  # (N_c,)
-        ref_grad_embed = torch.from_numpy(ref_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(ref_points_c.device)  # (1, N_c, N_c, C)
+            knn_idx = ref_node_knn_indices[i]  # (K,)
+            knn_grad = ref_grad_f[knn_idx]
+            knn_intensity = ref_intensity[knn_idx]
+            valid_mask = (knn_intensity != 0)
+            if valid_mask.any():
+                ref_grad_embed.append(knn_grad[valid_mask].mean())
+            else:
+                ref_grad_embed.append(torch.tensor(0.0, device=ref_grad_f.device))
+        ref_grad_embed = torch.stack(ref_grad_embed)
+        ref_grad_embed = ref_grad_embed.unsqueeze(-1).repeat(1, feats_c.shape[1]).unsqueeze(0)  # (1, N_c, C)
+        ref_grad_embed = ref_grad_embed.unsqueeze(2).repeat(1, 1, ref_points_c.shape[0], 1)  # (1, N_c, N_c, C)
         # src側
-        src_points_f_np = src_points_f.cpu().detach().numpy()
-        src_feats_f_np = feats_f[ref_length_f:].cpu().detach().numpy()
-        src_intensity = src_feats_f_np[:, 0]
-        src_grad_f = compute_intensity_gradient(src_points_f_np, src_intensity, k=1)
-        src_node_knn_indices_np = src_node_knn_indices.cpu().detach().numpy()
-        src_grad_embed = np.zeros((src_points_c.shape[0], src_points_c.shape[0]), dtype=np.float32)
+        src_intensity = feats_f[ref_length_f:][:, 0]
+        src_grad_f = compute_intensity_gradient_torch(src_points_f, src_intensity, k=1)
+        src_grad_embed = []
         for i in range(src_points_c.shape[0]):
-            knn_idx = src_node_knn_indices_np[i]
-            knn_idx = np.clip(knn_idx, 0, src_grad_f.shape[0] - 1)
-            src_grad_embed[i, :] = src_grad_f[knn_idx].mean()
-        src_grad_embed = torch.from_numpy(src_grad_embed).unsqueeze(-1).repeat(1, 1, feats_c.shape[1]).unsqueeze(0).to(src_points_c.device)
+            knn_idx = src_node_knn_indices[i]
+            knn_grad = src_grad_f[knn_idx]
+            knn_intensity = src_intensity[knn_idx]
+            valid_mask = (knn_intensity != 0)
+            if valid_mask.any():
+                src_grad_embed.append(knn_grad[valid_mask].mean())
+            else:
+                src_grad_embed.append(torch.tensor(0.0, device=src_grad_f.device))
+        src_grad_embed = torch.stack(src_grad_embed)
+        src_grad_embed = src_grad_embed.unsqueeze(-1).repeat(1, feats_c.shape[1]).unsqueeze(0)
+        src_grad_embed = src_grad_embed.unsqueeze(2).repeat(1, 1, src_points_c.shape[0], 1)
 
         # 3. Conditional Transformer
         ref_feats_c = feats_c[:ref_length_c]
