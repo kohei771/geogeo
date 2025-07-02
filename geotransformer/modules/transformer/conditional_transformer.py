@@ -103,6 +103,9 @@ class RPEConditionalTransformer(nn.Module):
                 if isinstance(self.layers[i], RPETransformerLayer) and self.use_grad:
                     feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, grad_embed=ref_grad_embed, memory_masks=masks0)
                     feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, grad_embed=src_grad_embed, memory_masks=masks1)
+                elif isinstance(self.layers[i], RPETransformerLayer):
+                    feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, memory_masks=masks0)
+                    feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, memory_masks=masks1)
                 else:
                     feats0, scores0 = self.layers[i](feats0, feats0, memory_masks=masks0)
                     feats1, scores1 = self.layers[i](feats1, feats1, memory_masks=masks1)
@@ -110,6 +113,9 @@ class RPEConditionalTransformer(nn.Module):
                 if isinstance(self.layers[i], RPETransformerLayer) and self.use_grad:
                     feats0, scores0 = self.layers[i](feats0, feats1, embeddings1, grad_embed=src_grad_embed, memory_masks=masks1)
                     feats1, scores1 = self.layers[i](feats1, feats0, embeddings0, grad_embed=ref_grad_embed, memory_masks=masks0)
+                elif isinstance(self.layers[i], RPETransformerLayer):
+                    feats0, scores0 = self.layers[i](feats0, feats1, embeddings1, memory_masks=masks1)
+                    feats1, scores1 = self.layers[i](feats1, feats0, embeddings0, memory_masks=masks0)
                 else:
                     feats0, scores0 = self.layers[i](feats0, feats1, memory_masks=masks1)
                     feats1, scores1 = self.layers[i](feats1, feats0, memory_masks=masks0)
