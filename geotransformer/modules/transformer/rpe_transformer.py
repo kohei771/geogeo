@@ -54,9 +54,14 @@ class RPEMultiHeadAttention(nn.Module):
         v = rearrange(self.proj_v(input_v), 'b m (h c) -> b h m c', h=self.num_heads)
         p = rearrange(self.proj_p(embed_qk), 'b n m (h c) -> b h n m c', h=self.num_heads)
         if self.use_grad and embed_gk is not None:
-            g = rearrange(self.proj_g(embed_gk), 'b n m (h c) -> b h n m c', h=self.num_heads)
+            # g: (B, N, C) → (B, 1, M, C) for broadcasting
+            g = self.proj_g(embed_gk)  # (B, N, C)
+            g = g.unsqueeze(1)  # (B, 1, N, C)
+            g = g.expand(-1, self.num_heads, -1, -1)  # (B, H, N, C)
+            # q: (B, H, N, C), g: (B, H, M, C) → (B, H, N, M)
+            # ここではgを各key側（M）にbroadcastして全組み合わせで内積
+            attention_scores_g = torch.einsum('bhnc,bhmc->bhnm', q, g)
             attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, p)
-            attention_scores_g = torch.einsum('bhnc,bhnmc->bhnm', q, g)
             attention_scores_pg = attention_scores_pg + attention_scores_g
         else:
             attention_scores_pg = torch.einsum('bhnc,bhnmc->bhnm', q, p)

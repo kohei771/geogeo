@@ -149,6 +149,7 @@ class GeoTransformer(nn.Module):
         ref_meanvar = []
         for i in range(ref_points_c.shape[0]):
             knn_idx = ref_node_knn_indices[i]
+            knn_idx = torch.clamp(knn_idx, 0, ref_intensity.shape[0] - 1)
             knn_intensity = ref_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
             if valid_mask.any().item():
@@ -164,6 +165,7 @@ class GeoTransformer(nn.Module):
         src_meanvar = []
         for i in range(src_points_c.shape[0]):
             knn_idx = src_node_knn_indices[i]
+            knn_idx = torch.clamp(knn_idx, 0, src_intensity.shape[0] - 1)
             knn_intensity = src_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
             if valid_mask.any().item():

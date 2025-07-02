@@ -103,14 +103,9 @@ class RPEConditionalTransformer(nn.Module):
                 feats0, scores0 = self.layers[i](feats0, feats0, embeddings0, grad_embed=ref_grad_embed if self.use_grad else None, memory_masks=masks0)
                 feats1, scores1 = self.layers[i](feats1, feats1, embeddings1, grad_embed=src_grad_embed if self.use_grad else None, memory_masks=masks1)
             else:
-                if self.parallel:
-                    new_feats0, scores0 = self.layers[i](feats0, feats1, memory_masks=masks1)
-                    new_feats1, scores1 = self.layers[i](feats1, feats0, memory_masks=masks0)
-                    feats0 = new_feats0
-                    feats1 = new_feats1
-                else:
-                    feats0, scores0 = self.layers[i](feats0, feats1, memory_masks=masks1)
-                    feats1, scores1 = self.layers[i](feats1, feats0, memory_masks=masks0)
+                # cross blockでもg埋め込みを渡す
+                feats0, scores0 = self.layers[i](feats0, feats1, embeddings1, grad_embed=src_grad_embed if self.use_grad else None, memory_masks=masks1)
+                feats1, scores1 = self.layers[i](feats1, feats0, embeddings0, grad_embed=ref_grad_embed if self.use_grad else None, memory_masks=masks0)
             if self.return_attention_scores:
                 attention_scores.append([scores0, scores1])
         if self.return_attention_scores:
