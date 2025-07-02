@@ -180,8 +180,8 @@ class GeoTransformer(nn.Module):
         # --- g埋め込み生成（線形変換） ---
         # Attentionバイアス用にC次元へ投影
         g_hidden_dim = feats_c.shape[1]  # C
-        ref_g_embed = F.linear(ref_meanvar, torch.eye(2, g_hidden_dim, device=ref_meanvar.device))  # (N_c, C)
-        src_g_embed = F.linear(src_meanvar, torch.eye(2, g_hidden_dim, device=src_meanvar.device))  # (N_c, C)
+        ref_g_embed = F.linear(ref_meanvar, torch.eye(2, g_hidden_dim, device=ref_meanvar.device).T)  # (N_c, C)
+        src_g_embed = F.linear(src_meanvar, torch.eye(2, g_hidden_dim, device=src_meanvar.device).T)  # (N_c, C)
         # (必要に応じてMLPやnn.Linearでよりリッチに変換してもOK)
         ref_g_embed = ref_g_embed.unsqueeze(0)  # (1, N_c, C)
         src_g_embed = src_g_embed.unsqueeze(0)  # (1, N_c, C)
