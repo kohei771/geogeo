@@ -36,7 +36,7 @@ _C.data.dataset_root = osp.join(_C.root_dir, 'data', 'Kitti')
 _C.train = edict()
 _C.train.batch_size = 1
 _C.train.num_workers = 8
-_C.train.point_limit = 5000  # Reduce for memory efficiency
+_C.train.point_limit = 10000  # Reduce for memory efficiency
 _C.train.use_augmentation = True
 _C.train.augmentation_noise = 0.01
 _C.train.augmentation_min_scale = 0.8
@@ -105,7 +105,7 @@ _C.coarse_matching.dual_normalization = True
 # model - GeoTransformer
 _C.geotransformer = edict()
 _C.geotransformer.input_dim = 2048
-_C.geotransformer.hidden_dim = 64
+_C.geotransformer.hidden_dim = 128
 _C.geotransformer.output_dim = 256
 _C.geotransformer.num_heads = 4
 _C.geotransformer.blocks = ['self', 'cross', 'self', 'cross', 'self', 'cross']

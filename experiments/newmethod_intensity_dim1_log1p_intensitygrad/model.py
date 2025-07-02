@@ -143,41 +143,46 @@ class GeoTransformer(nn.Module):
         feats_c = feats_list[-1]
         feats_f = feats_list[0]
 
-        # --- 勾配特徴計算（PyTorch/GPU化） ---
+        # --- スーパーポイントごとのintensity平均・分散特徴（Attentionバイアス用g埋め込み） ---
         # ref側
         ref_intensity = feats_f[:ref_length_f][:, 0]  # (N_f,)
-        ref_grad_f = compute_intensity_gradient_torch(ref_points_f, ref_intensity, k=1)  # (N_f,)
-        ref_grad_embed = []
+        ref_meanvar = []
         for i in range(ref_points_c.shape[0]):
             knn_idx = ref_node_knn_indices[i]
-            knn_idx = torch.clamp(knn_idx, 0, ref_grad_f.shape[0] - 1)
-            knn_grad = ref_grad_f[knn_idx]
             knn_intensity = ref_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
             if valid_mask.any().item():
-                ref_grad_embed.append(knn_grad[valid_mask].mean())
+                mean_val = knn_intensity[valid_mask].mean()
+                var_val = knn_intensity[valid_mask].var()
             else:
-                ref_grad_embed.append(torch.tensor(0.0, device=ref_grad_f.device))
-        ref_grad_embed = torch.stack(ref_grad_embed)
-        ref_grad_embed = ref_grad_embed.unsqueeze(-1).repeat(1, feats_c.shape[1]).unsqueeze(0)  # (1, N_c, C)
-        ref_grad_embed = ref_grad_embed.unsqueeze(2).repeat(1, 1, ref_points_c.shape[0], 1)  # (1, N_c, N_c, C)
+                mean_val = torch.tensor(0.0, device=ref_intensity.device)
+                var_val = torch.tensor(0.0, device=ref_intensity.device)
+            ref_meanvar.append(torch.stack([mean_val, var_val]))
+        ref_meanvar = torch.stack(ref_meanvar)  # (N_c, 2)
         # src側
         src_intensity = feats_f[ref_length_f:][:, 0]
-        src_grad_f = compute_intensity_gradient_torch(src_points_f, src_intensity, k=1)
-        src_grad_embed = []
+        src_meanvar = []
         for i in range(src_points_c.shape[0]):
             knn_idx = src_node_knn_indices[i]
-            knn_idx = torch.clamp(knn_idx, 0, src_grad_f.shape[0] - 1)
-            knn_grad = src_grad_f[knn_idx]
             knn_intensity = src_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
             if valid_mask.any().item():
-                src_grad_embed.append(knn_grad[valid_mask].mean())
+                mean_val = knn_intensity[valid_mask].mean()
+                var_val = knn_intensity[valid_mask].var()
             else:
-                src_grad_embed.append(torch.tensor(0.0, device=src_grad_f.device))
-        src_grad_embed = torch.stack(src_grad_embed)
-        src_grad_embed = src_grad_embed.unsqueeze(-1).repeat(1, feats_c.shape[1]).unsqueeze(0)
-        src_grad_embed = src_grad_embed.unsqueeze(2).repeat(1, 1, src_points_c.shape[0], 1)
+                mean_val = torch.tensor(0.0, device=src_intensity.device)
+                var_val = torch.tensor(0.0, device=src_intensity.device)
+            src_meanvar.append(torch.stack([mean_val, var_val]))
+        src_meanvar = torch.stack(src_meanvar)  # (N_c, 2)
+
+        # --- g埋め込み生成（線形変換） ---
+        # Attentionバイアス用にC次元へ投影
+        g_hidden_dim = feats_c.shape[1]  # C
+        ref_g_embed = F.linear(ref_meanvar, torch.eye(2, g_hidden_dim, device=ref_meanvar.device))  # (N_c, C)
+        src_g_embed = F.linear(src_meanvar, torch.eye(2, g_hidden_dim, device=src_meanvar.device))  # (N_c, C)
+        # (必要に応じてMLPやnn.Linearでよりリッチに変換してもOK)
+        ref_g_embed = ref_g_embed.unsqueeze(0)  # (1, N_c, C)
+        src_g_embed = src_g_embed.unsqueeze(0)  # (1, N_c, C)
 
         # 3. Conditional Transformer
         ref_feats_c = feats_c[:ref_length_c]
@@ -187,8 +192,8 @@ class GeoTransformer(nn.Module):
             src_points_c.unsqueeze(0),
             ref_feats_c.unsqueeze(0),
             src_feats_c.unsqueeze(0),
-            ref_grad_embed=ref_grad_embed,
-            src_grad_embed=src_grad_embed,
+            ref_grad_embed=ref_g_embed,
+            src_grad_embed=src_g_embed,
         )
         ref_feats_c_norm = F.normalize(ref_feats_c.squeeze(0), p=2, dim=1)
         src_feats_c_norm = F.normalize(src_feats_c.squeeze(0), p=2, dim=1)
