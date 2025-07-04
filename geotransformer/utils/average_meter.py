@@ -33,3 +33,6 @@ class AverageMeter:
 
     def median(self):
         return np.median(self.records)
+
+    def var(self):
+        return np.var(self.records)
