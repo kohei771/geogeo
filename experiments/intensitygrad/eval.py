@@ -180,7 +180,6 @@ def eval_one_epoch(args, cfg, logger):
     message += ', FMR: {:.3f}'.format(fine_matching_meter.mean('recall'))
     message += ', IR: {:.3f}'.format(fine_matching_meter.mean('inlier_ratio'))
     message += ', OV: {:.3f}'.format(fine_matching_meter.mean('overlap'))
-    message += ', std: {:.3f}'.format(fine_matching_meter.std('recall'))
     logger.critical(message)
 
     # 2. print registration evaluation results
@@ -188,8 +187,6 @@ def eval_one_epoch(args, cfg, logger):
     message += ', RR: {:.3f}'.format(registration_meter.mean("recall"))
     message += ', RRE: {:.3f}'.format(registration_meter.mean("rre"))
     message += ', RTE: {:.3f}'.format(registration_meter.mean("rte"))
-    message += ', RRE_std: {:.3f}'.format(registration_meter.std("rre"))
-    message += ', RTE_std: {:.3f}'.format(registration_meter.std("rte"))
     message += ', RRE_var: {:.3f}'.format(registration_meter.var("rre"))
     message += ', RTE_var: {:.3f}'.format(registration_meter.var("rte"))
     logger.critical(message)
