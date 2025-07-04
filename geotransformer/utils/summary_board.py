@@ -74,6 +74,10 @@ class SummaryBoard:
         self.check_name(name)
         return self.meter_dict[name].median()
 
+    def var(self, name):
+        self.check_name(name)
+        return self.meter_dict[name].var()
+
     def tostring(self, names=None):
         if names is None:
             names = self.meter_names
