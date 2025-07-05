@@ -32,17 +32,18 @@ def train_score_weight_with_matching(cfg, epochs=5, lr=1e-2, max_batches=20, sco
 
     for epoch in range(epochs):
         batch_count = 0
+        epoch_loss = 0.0
+        n_batches = 0
         for batch in train_loader:
             if batch_count >= max_batches:
                 break
-            print(batch.keys())  # デバッグ用: キーを確認
+            if batch_count == 0 and epoch == 0:
+                print(batch.keys())  # 最初の1バッチだけキーを表示
             # ref_featsがなければfeaturesやsrc_featsなどに修正
             ref_feats = batch.get('ref_feats', None)
             if ref_feats is None:
-                # 例: 'features'キーがあればそちらを使う
                 ref_feats = batch.get('features', None)
             if ref_feats is None:
-                # 例: 'src_feats'キーがあればそちらを使う
                 ref_feats = batch.get('src_feats', None)
             if ref_feats is None:
                 raise KeyError(f"No suitable feature key found in batch: {batch.keys()}")
@@ -74,8 +75,13 @@ def train_score_weight_with_matching(cfg, epochs=5, lr=1e-2, max_batches=20, sco
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            epoch_loss += loss.item()
+            n_batches += 1
             batch_count += 1
-        print(f"Epoch {epoch+1}: loss={loss.item():.4f}")
+            # 進捗表示
+            print(f"[Epoch {epoch+1}/{epochs}] Batch {batch_count}/{max_batches} Loss: {loss.item():.4f}", end='\r')
+        avg_loss = epoch_loss / max(n_batches, 1)
+        print(f"\nEpoch {epoch+1}: avg_loss={avg_loss:.4f}")
     # 重み保存
     torch.save(score_module.state_dict(), "score_weights.pth")
     print("score_weights.pth saved.")
