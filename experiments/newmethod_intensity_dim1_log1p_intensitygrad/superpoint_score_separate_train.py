@@ -620,7 +620,8 @@ class ScoreWeightTrainer:
                     import traceback
                     print(f"Error in validation batch {batch_count}: {e}")
                     print(f"Error type: {type(e).__name__}")
-                    print(f"Traceback (last 3 lines): {traceback.format_exc().split('\\n')[-4:]}")
+                    tb_lines = traceback.format_exc().split('\n')
+                    print(f"Traceback (last 3 lines): {tb_lines[-4:]}")
                     continue
         
         self.score_module.train()
