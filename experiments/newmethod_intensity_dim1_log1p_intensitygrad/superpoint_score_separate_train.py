@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from config import make_cfg
 from dataset import train_valid_data_loader
 from model import create_model
@@ -48,7 +49,7 @@ class ScoreWeightTrainer:
                 device = next(self.model.parameters()).device
                 ref_feats = ref_feats.to(device)
                 if not isinstance(ref_points, torch.Tensor):
-                    ref_points = torch.tensor(ref_points, device=device)
+                    ref_points = torch.from_numpy(np.asarray(ref_points)).to(device)
                 else:
                     ref_points = ref_points.to(device)
                 # 仮: 密度・強度分散
