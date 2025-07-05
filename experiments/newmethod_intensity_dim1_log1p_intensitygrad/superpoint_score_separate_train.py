@@ -50,11 +50,14 @@ class ScoreWeightTrainer:
                 ref_feats = ref_feats.to(device)
                 # ref_pointsをテンソル化しデバイスを揃える
                 if not isinstance(ref_points, torch.Tensor):
-                    ref_points = np.asarray(ref_points)
-                    if ref_points.dtype == object:
-                        # ネストしたリストの場合はstack
-                        ref_points = np.stack(ref_points)
-                    ref_points = torch.from_numpy(ref_points).float().to(device)
+                    if isinstance(ref_points, list) and all(isinstance(x, (torch.Tensor, np.ndarray, list)) for x in ref_points):
+                        ref_points = [torch.as_tensor(x, dtype=torch.float32, device=device) for x in ref_points]
+                        try:
+                            ref_points = torch.cat(ref_points, dim=0)
+                        except Exception:
+                            ref_points = torch.stack(ref_points, dim=0)
+                    else:
+                        ref_points = torch.as_tensor(ref_points, dtype=torch.float32, device=device)
                 else:
                     ref_points = ref_points.to(device)
                 # 仮: 密度・強度分散
