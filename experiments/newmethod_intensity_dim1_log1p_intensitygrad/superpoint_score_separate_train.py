@@ -39,6 +39,8 @@ def train_score_weight_with_matching(cfg, epochs=5, lr=1e-2, max_batches=20, sco
                 break
             if batch_count == 0 and epoch == 0:
                 print(batch.keys())  # 最初の1バッチだけキーを表示
+            elif batch_count == 1 and epoch == 0:
+                print("--- batch key print end ---")
             # ref_featsがなければfeaturesやsrc_featsなどに修正
             ref_feats = batch.get('ref_feats', None)
             if ref_feats is None:
@@ -78,7 +80,7 @@ def train_score_weight_with_matching(cfg, epochs=5, lr=1e-2, max_batches=20, sco
             epoch_loss += loss.item()
             n_batches += 1
             batch_count += 1
-            # 進捗表示
+            # 進捗表示（バッチごとに1行だけ上書き）
             print(f"[Epoch {epoch+1}/{epochs}] Batch {batch_count}/{max_batches} Loss: {loss.item():.4f}", end='\r')
         avg_loss = epoch_loss / max(n_batches, 1)
         print(f"\nEpoch {epoch+1}: avg_loss={avg_loss:.4f}")
