@@ -35,9 +35,22 @@ def train_score_weight_with_matching(cfg, epochs=5, lr=1e-2, max_batches=20, sco
         for batch in train_loader:
             if batch_count >= max_batches:
                 break
-            # 例: ref側のみ
-            ref_feats = batch['ref_feats']  # (N, 1)
-            ref_points = batch['ref_points']  # (N, 3)
+            print(batch.keys())  # デバッグ用: キーを確認
+            # ref_featsがなければfeaturesやsrc_featsなどに修正
+            ref_feats = batch.get('ref_feats', None)
+            if ref_feats is None:
+                # 例: 'features'キーがあればそちらを使う
+                ref_feats = batch.get('features', None)
+            if ref_feats is None:
+                # 例: 'src_feats'キーがあればそちらを使う
+                ref_feats = batch.get('src_feats', None)
+            if ref_feats is None:
+                raise KeyError(f"No suitable feature key found in batch: {batch.keys()}")
+            ref_points = batch.get('ref_points', None)
+            if ref_points is None:
+                ref_points = batch.get('points', None)
+            if ref_points is None:
+                raise KeyError(f"No suitable points key found in batch: {batch.keys()}")
             # 仮: 密度・強度分散
             density = torch.ones(ref_feats.shape[0])
             intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0])
