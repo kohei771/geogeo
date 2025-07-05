@@ -50,14 +50,10 @@ class ScoreWeightTrainer:
                 features = normalize_features(torch.stack([density, intensity_var], dim=1), method='minmax')
                 # スコア計算
                 scores = self.score_module(features)
-                mask = (scores > self.score_threshold).squeeze()
-                print(f"mask.sum(): {mask.sum().item()}")
-                print(f"scores[mask][:10]: {scores[mask][:10].detach().cpu().numpy()}")
-                # データdictをマスク済みにしてforward
-                if mask.sum() == 0:
-                    continue
-                batch['features'] = ref_feats[mask]
-                batch['points'] = ref_points[mask]
+                # ソフト重みづけ: 特徴量にスコア（sigmoidで0-1化）を掛ける
+                soft_scores = torch.sigmoid(scores).unsqueeze(1)  # (N, 1)
+                batch['features'] = ref_feats * soft_scores
+                batch['points'] = ref_points  # 全部使う
                 # モデルforward
                 output_dict = self.model(batch)
                 loss_dict = self.loss_func(output_dict, batch)
