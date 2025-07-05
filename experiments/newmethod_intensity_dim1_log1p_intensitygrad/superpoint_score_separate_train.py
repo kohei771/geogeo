@@ -36,12 +36,12 @@ class SuperPointScoreTrainer:
                 param.requires_grad = False
         self.model.train()  # 学習モードに設定
         
-        # SuperPoint Score学習用の特徴量重み
+        # SuperPoint Score学習用の特徴量重み（より小さな初期値）
         initial_weights = [
-            1.0,   # 密度
-            0.5,   # 強度分散
-            0.8,   # 強度平均
-            0.3,   # 強度勾配
+            0.1,   # 密度
+            0.1,   # 強度分散
+            0.1,   # 強度平均
+            0.1,   # 強度勾配
         ]
         
         self.score_module = SuperPointScoreModule(
@@ -137,10 +137,18 @@ class SuperPointScoreTrainer:
             density = len(valid_indices) / num_points_in_patch
             
             # 2. 強度分散
-            intensity_var = torch.var(neighbor_feats).clamp(min=1e-6)
+            intensity_var = torch.var(neighbor_feats)
+            if torch.isnan(intensity_var) or torch.isinf(intensity_var):
+                intensity_var = torch.tensor(0.0, device=points_c.device)
+            else:
+                intensity_var = torch.clamp(intensity_var, min=1e-6, max=10.0)
             
             # 3. 強度平均
             intensity_mean = torch.mean(neighbor_feats)
+            if torch.isnan(intensity_mean) or torch.isinf(intensity_mean):
+                intensity_mean = torch.tensor(0.0, device=points_c.device)
+            else:
+                intensity_mean = torch.clamp(intensity_mean, min=0.0, max=10.0)
             
             # 4. 強度勾配（空間的な変化）
             if len(valid_indices) > 1:
@@ -148,14 +156,26 @@ class SuperPointScoreTrainer:
                 center_point = points_c[i]
                 distances = torch.norm(neighbor_points - center_point, dim=1)
                 
-                # 距離と強度の相関を勾配として使用
+                # より安全な勾配計算
                 try:
-                    stack_tensor = torch.stack([distances, neighbor_feats.squeeze()])
-                    if stack_tensor.shape[1] > 1:  # 相関計算に十分なデータがある
-                        corr_matrix = torch.corrcoef(stack_tensor)
-                        intensity_gradient = torch.abs(corr_matrix[0, 1])
+                    # 距離と強度の標準偏差を計算
+                    distance_std = torch.std(distances)
+                    intensity_std = torch.std(neighbor_feats.squeeze())
+                    
+                    if distance_std > 1e-6 and intensity_std > 1e-6:
+                        # 正規化された距離と強度の相関を計算
+                        norm_distances = (distances - distances.mean()) / distance_std
+                        norm_intensities = (neighbor_feats.squeeze() - neighbor_feats.mean()) / intensity_std
+                        
+                        # 相関係数を手動で計算（torch.corrcoefより安全）
+                        correlation = torch.mean(norm_distances * norm_intensities)
+                        intensity_gradient = torch.abs(correlation)
+                        
+                        # NaN/Infチェック
                         if torch.isnan(intensity_gradient) or torch.isinf(intensity_gradient):
                             intensity_gradient = torch.tensor(0.0, device=points_c.device)
+                        else:
+                            intensity_gradient = torch.clamp(intensity_gradient, min=0.0, max=1.0)
                     else:
                         intensity_gradient = torch.tensor(0.0, device=points_c.device)
                 except:
@@ -165,9 +185,16 @@ class SuperPointScoreTrainer:
             
             # 特徴量の値を正規化して安定化
             density_norm = torch.clamp(torch.tensor(density, device=points_c.device, dtype=torch.float32), min=0.0, max=1.0)
-            intensity_var = torch.clamp(intensity_var, min=0.0, max=10.0)
-            intensity_mean = torch.clamp(intensity_mean, min=0.0, max=10.0)
-            intensity_gradient = torch.clamp(intensity_gradient, min=0.0, max=1.0)
+            
+            # 最終的なNaN/Infチェック
+            if torch.isnan(density_norm) or torch.isinf(density_norm):
+                density_norm = torch.tensor(0.1, device=points_c.device)
+            if torch.isnan(intensity_var) or torch.isinf(intensity_var):
+                intensity_var = torch.tensor(0.0, device=points_c.device)
+            if torch.isnan(intensity_mean) or torch.isinf(intensity_mean):
+                intensity_mean = torch.tensor(0.0, device=points_c.device)
+            if torch.isnan(intensity_gradient) or torch.isinf(intensity_gradient):
+                intensity_gradient = torch.tensor(0.0, device=points_c.device)
             
             features = torch.stack([
                 density_norm,
@@ -175,6 +202,10 @@ class SuperPointScoreTrainer:
                 intensity_mean,
                 intensity_gradient
             ])
+            
+            # 特徴量ベクトル全体のNaN/Infチェック
+            if torch.isnan(features).any() or torch.isinf(features).any():
+                features = torch.tensor([0.1, 0.0, 0.0, 0.0], device=points_c.device)
             
             superpoint_features.append(features)
         
@@ -197,14 +228,12 @@ class SuperPointScoreTrainer:
         if nan_mask.any() or inf_mask.any():
             print(f"Warning: Found {nan_mask.sum()} NaN and {inf_mask.sum()} Inf values in scores")
             
-            # NaN/Infを平均値で置き換え
-            valid_scores = scores[~(nan_mask | inf_mask)]
-            if len(valid_scores) > 0:
-                replacement_value = valid_scores.mean()
-            else:
-                replacement_value = torch.tensor(0.0, device=scores.device)
-            
+            # NaN/Infを固定値で置き換え（平均値計算も危険なので）
+            replacement_value = torch.tensor(0.5, device=scores.device)
             scores = torch.where(nan_mask | inf_mask, replacement_value, scores)
+            
+            # さらに安全のために全体をクランプ
+            scores = torch.clamp(scores, min=0.0, max=1.0)
         
         return scores
 
