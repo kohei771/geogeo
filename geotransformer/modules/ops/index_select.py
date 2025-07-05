@@ -22,6 +22,7 @@ def index_select(data: torch.Tensor, index: torch.LongTensor, dim: int) -> torch
     Returns:
         output (Tensor): (a_0, ..., a_{dim-1}, b_0, ..., b_{m-1}, a_{dim+1}, ..., a_{n-1})
     """
+    index = index.to(data.device)  # indexをdataのデバイスに揃える
     output = data.index_select(dim, index.reshape(-1))
 
     if index.ndim > 1:
