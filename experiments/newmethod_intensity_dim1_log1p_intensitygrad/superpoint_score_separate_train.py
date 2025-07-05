@@ -12,11 +12,17 @@ from geotransformer.modules.ops import point_to_node_partition
 def safe_item(value):
     """
     安全に.item()を呼び出すヘルパー関数
+    tensor、int、float、その他の値に対応
     """
     if hasattr(value, 'item'):
         return value.item()
+    elif isinstance(value, (int, float)):
+        return value
     else:
-        return int(value)
+        try:
+            return int(value)
+        except:
+            return float(value)
 
 class ScoreWeightTrainer:
     def __init__(self, cfg):
@@ -460,6 +466,11 @@ class ScoreWeightTrainer:
                     # 8. 総損失（メイン損失 + スコア損失）
                     total_loss = main_loss + score_loss * 0.1  # スコア損失は小さな重みで加算
                     
+                    # 損失値の型確認（デバッグ用）
+                    if batch_count == 0:
+                        print(f"Debug - Loss types: total_loss={type(total_loss)}, main_loss={type(main_loss)}, score_loss={type(score_loss)}")
+                        print(f"Debug - Loss values: total_loss={total_loss}, main_loss={main_loss}, score_loss={score_loss}")
+                    
                     # 9. 逆伝播
                     self.optimizer.zero_grad()
                     total_loss.backward()
@@ -473,15 +484,15 @@ class ScoreWeightTrainer:
                     if batch_count == self.max_batches - 1:  # エポック終了時
                         self.scheduler.step()
                     
-                    epoch_loss += total_loss.item()
+                    epoch_loss += safe_item(total_loss)
                     n_batches += 1
                     
                     if batch_count % 20 == 0:  # 20バッチごとに出力
                         current_lr = self.optimizer.param_groups[0]['lr']
                         print(f"[Epoch {epoch+1}/{self.max_epoch}] Batch {batch_count+1}/{self.max_batches} "
-                              f"Total Loss: {total_loss.item():.4f} "
-                              f"Main Loss: {main_loss.item():.4f} "
-                              f"Score Loss: {score_loss.item():.4f} "
+                              f"Total Loss: {safe_item(total_loss):.4f} "
+                              f"Main Loss: {safe_item(main_loss):.4f} "
+                              f"Score Loss: {safe_item(score_loss):.4f} "
                               f"LR: {current_lr:.6f} "
                               f"Weights: {self.score_module.weights.data.cpu().numpy()}")
                         
@@ -490,7 +501,10 @@ class ScoreWeightTrainer:
                             self._debug_intensity_stats(data_dict)
                 
                 except Exception as e:
+                    import traceback
                     print(f"Error in batch {batch_count}: {e}")
+                    print(f"Error type: {type(e).__name__}")
+                    print(f"Traceback: {traceback.format_exc()}")
                     continue
             
             avg_loss = epoch_loss / max(n_batches, 1)
@@ -599,11 +613,14 @@ class ScoreWeightTrainer:
                     main_loss_dict = self.loss_func(output_dict, weighted_data_dict)
                     main_loss = main_loss_dict['loss']
                     
-                    val_loss += main_loss.item()
+                    val_loss += safe_item(main_loss)
                     n_val_batches += 1
                     
                 except Exception as e:
+                    import traceback
                     print(f"Error in validation batch {batch_count}: {e}")
+                    print(f"Error type: {type(e).__name__}")
+                    print(f"Traceback (last 3 lines): {traceback.format_exc().split('\\n')[-4:]}")
                     continue
         
         self.score_module.train()
@@ -692,15 +709,15 @@ class ScoreWeightTrainer:
             intensity_values = features[:, 0]
             
             total_points = len(intensity_values)
-            zero_points = (intensity_values == 0.0).sum().item()
+            zero_points = safe_item((intensity_values == 0.0).sum())
             non_zero_points = total_points - zero_points
             
             if non_zero_points > 0:
                 non_zero_values = intensity_values[intensity_values != 0.0]
-                intensity_min = non_zero_values.min().item()
-                intensity_max = non_zero_values.max().item()
-                intensity_mean = non_zero_values.mean().item()
-                intensity_std = non_zero_values.std().item()
+                intensity_min = safe_item(non_zero_values.min())
+                intensity_max = safe_item(non_zero_values.max())
+                intensity_mean = safe_item(non_zero_values.mean())
+                intensity_std = safe_item(non_zero_values.std())
                 
                 print(f"Intensity Stats - Total: {total_points}, Zero: {zero_points} ({zero_points/total_points*100:.1f}%), "
                       f"Non-zero: {non_zero_points}, Range: [{intensity_min:.3f}, {intensity_max:.3f}], "
