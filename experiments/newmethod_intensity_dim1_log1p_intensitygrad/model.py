@@ -143,7 +143,6 @@ class GeoTransformer(nn.Module):
         src_points_c = src_points_c.to(device)
         ref_points_f = ref_points_f.to(device)
         src_points_f = src_points_f.to(device)
-        print(f"[DEBUG] ref_points_f shape: {ref_points_f.shape}, ref_points_c shape: {ref_points_c.shape}")
 
         output_dict['ref_points_c'] = ref_points_c
         output_dict['src_points_c'] = src_points_c
