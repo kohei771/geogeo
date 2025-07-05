@@ -28,11 +28,13 @@ class SuperPointScoreTrainer:
         self.cfg = cfg
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # メインモデルはfreeze
+        # メインモデル（一部パラメータのみfreeze）
         self.model = create_model(cfg).to(self.device)
-        for param in self.model.parameters():
-            param.requires_grad = False
-        self.model.eval()
+        # 特徴抽出部分のみfreeze、最終層は学習可能にする
+        for name, param in self.model.named_parameters():
+            if 'final' not in name and 'head' not in name:
+                param.requires_grad = False
+        self.model.train()  # 学習モードに設定
         
         # SuperPoint Score学習用の特徴量重み
         initial_weights = [
@@ -56,6 +58,11 @@ class SuperPointScoreTrainer:
         self.max_epoch = 30
         self.score_threshold = getattr(cfg, 'superpoint_score_threshold', 0.5)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.5)
+        
+        # マスキング機構用のパラメータ
+        self.temperature = 2.0  # ソフトマスキングの温度パラメータ
+        self.training_threshold_ratio = 0.3  # 学習時は緩い閾値（70%を使用）
+        self.inference_threshold_ratio = 0.7  # 推論時は厳しい閾値（30%を使用）
 
     def compute_superpoint_features(self, data_dict):
         """スーパーポイントの基本特徴量を計算"""
@@ -162,7 +169,7 @@ class SuperPointScoreTrainer:
         """1エポック分のトレーニング"""
         self.score_module.train()
         
-        total_loss = 0.0
+        total_loss_value = 0.0
         batch_count = 0
         max_batches = 100  # エラーが多発する場合のバッチ制限
         
@@ -184,35 +191,35 @@ class SuperPointScoreTrainer:
                 # スコアを計算
                 all_scores = self.score_module(superpoint_features)
                 
-                # 上位スコアのスーパーポイントを選択
-                top_k = max(int(len(all_scores) * self.score_threshold), 1)  # 最低1個は選択
-                _, top_indices = torch.topk(all_scores, top_k)
+                # 適応的閾値でソフトマスキング（方針D）
+                masked_data_dict, soft_mask = self._apply_soft_masking(data_dict, all_scores, is_training=True)
                 
-                # 選択されたスーパーポイントでモデルを実行
-                selected_data_dict = self._create_masked_data_dict(data_dict, top_indices)
-                
-                # メインモデルの推論
-                with torch.no_grad():
-                    output_dict = self.model(selected_data_dict)
+                # メインモデルの推論（勾配を保持）
+                output_dict = self.model(masked_data_dict)
                 
                 # 損失計算（選択されたスーパーポイントに対して）
-                loss_dict = self.loss_func(output_dict, selected_data_dict)
-                loss = loss_dict['loss']
+                loss_dict = self.loss_func(output_dict, masked_data_dict)
+                main_loss = loss_dict['loss']
                 
-                # 損失がテンソルでない場合の処理
-                if not torch.is_tensor(loss):
-                    loss = torch.tensor(loss, device=self.device, requires_grad=True)
+                # スコア正規化損失を追加（スコアの分散を促進）
+                score_reg_loss = self._compute_score_regularization_loss(all_scores)
+                
+                # 総損失
+                total_loss = main_loss + 0.01 * score_reg_loss
                 
                 # バックプロパゲーション
                 self.optimizer.zero_grad()
-                loss.backward()
+                total_loss.backward()
                 self.optimizer.step()
                 
-                total_loss += loss.item()
+                total_loss_value += total_loss.item()
                 batch_count += 1
                 
                 if batch_idx % 10 == 0:
-                    print(f'Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}')
+                    mask_ratio = soft_mask.mean().item()
+                    print(f'Epoch {epoch}, Batch {batch_idx}, Loss: {total_loss.item():.4f}, '
+                          f'Main: {main_loss.item():.4f}, Reg: {score_reg_loss.item():.4f}, '
+                          f'Mask Ratio: {mask_ratio:.3f}')
                     
             except Exception as e:
                 print(f'Error in batch {batch_idx}: {str(e)}')
@@ -221,22 +228,103 @@ class SuperPointScoreTrainer:
                     torch.cuda.empty_cache()
                 continue
         
-        avg_loss = total_loss / max(batch_count, 1)
+        avg_loss = total_loss_value / max(batch_count, 1)
         print(f'Epoch {epoch} finished. Average Loss: {avg_loss:.4f}')
         
         return avg_loss
 
-    def _create_masked_data_dict(self, data_dict, top_indices):
-        """選択されたスーパーポイントに対応するデータを作成"""
-        # 現在の実装では簡略化のため、元のデータをそのまま返す
-        # 実際の実装では、top_indicesに基づいてスーパーポイントをフィルタリングする
+    def _apply_soft_masking(self, data_dict, scores, is_training=True):
+        """
+        適応的閾値を使用したソフトマスキング（方針D）
         
-        # データが確実にdeviceに移動されていることを確認
+        Args:
+            data_dict: 入力データ
+            scores: スーパーポイントスコア
+            is_training: 学習時かどうか
+            
+        Returns:
+            masked_data_dict: マスクされたデータ
+            soft_mask: ソフトマスク値
+        """
+        # 適応的閾値の計算
+        if is_training:
+            # 学習時は緩い閾値（多くのスーパーポイントを残す）
+            threshold_quantile = self.training_threshold_ratio
+        else:
+            # 推論時は厳しい閾値（重要なもののみ）
+            threshold_quantile = self.inference_threshold_ratio
+        
+        adaptive_threshold = torch.quantile(scores, threshold_quantile)
+        
+        # ソフトマスクの計算（sigmoid を使用して微分可能）
+        soft_mask = torch.sigmoid((scores - adaptive_threshold) / self.temperature)
+        
+        # 最低限のスーパーポイント数を保証
+        min_points = max(int(len(scores) * 0.1), 5)  # 最低10%または5個
+        if soft_mask.sum() < min_points:
+            # 上位のスコアを強制的に選択
+            _, top_indices = torch.topk(scores, min_points)
+            soft_mask = torch.zeros_like(scores)
+            soft_mask[top_indices] = 1.0
+        
+        # データにソフトマスクを適用
+        masked_data_dict = self._apply_mask_to_data(data_dict, soft_mask)
+        
+        return masked_data_dict, soft_mask
+    
+    def _apply_mask_to_data(self, data_dict, soft_mask):
+        """
+        ソフトマスクをデータに適用
+        
+        Args:
+            data_dict: 入力データ
+            soft_mask: ソフトマスク値
+            
+        Returns:
+            masked_data_dict: マスクされたデータ
+        """
         masked_data_dict = {}
+        
         for key, value in data_dict.items():
-            if torch.is_tensor(value):
+            if key == 'points' and isinstance(value, list):
+                # points リストの処理（最粗レベルにマスクを適用）
+                masked_points = []
+                for i, points in enumerate(value):
+                    if i == len(value) - 1:  # 最粗レベル（スーパーポイント）
+                        points = points.to(self.device)
+                        # ソフトマスクを座標に適用（重み付け）
+                        # 完全に削除するのではなく、重みを下げる
+                        mask_weights = soft_mask.unsqueeze(-1).expand_as(points)
+                        masked_points_tensor = points * mask_weights
+                        masked_points.append(masked_points_tensor)
+                    else:
+                        # 他のレベルはそのまま
+                        masked_points.append(points.to(self.device))
+                masked_data_dict[key] = masked_points
+            elif key == 'lengths':
+                # lengths の処理（最粗レベルを調整）
+                masked_lengths = []
+                for i, length in enumerate(value):
+                    if i == len(value) - 1:  # 最粗レベル
+                        # ソフトマスクの合計に基づいて長さを調整
+                        ref_length = length[0]
+                        src_length = length[1]
+                        ref_mask = soft_mask[:ref_length]
+                        src_mask = soft_mask[ref_length:ref_length + src_length]
+                        
+                        # 有効な長さを計算（ソフトマスクの合計）
+                        effective_ref_length = max(int(ref_mask.sum().item()), 1)
+                        effective_src_length = max(int(src_mask.sum().item()), 1)
+                        
+                        masked_lengths.append([effective_ref_length, effective_src_length])
+                    else:
+                        masked_lengths.append(length)
+                masked_data_dict[key] = masked_lengths
+            elif torch.is_tensor(value):
+                # 通常のテンソルはdeviceに移動
                 masked_data_dict[key] = value.to(self.device)
             elif isinstance(value, list):
+                # リストの処理
                 masked_list = []
                 for item in value:
                     if torch.is_tensor(item):
@@ -245,9 +333,37 @@ class SuperPointScoreTrainer:
                         masked_list.append(item)
                 masked_data_dict[key] = masked_list
             else:
+                # その他はそのまま
                 masked_data_dict[key] = value
         
         return masked_data_dict
+    
+    def _compute_score_regularization_loss(self, scores):
+        """
+        スコアの正規化損失を計算
+        スコアの分散を促進し、全て同じ値にならないようにする
+        
+        Args:
+            scores: スーパーポイントスコア
+            
+        Returns:
+            regularization_loss: 正規化損失
+        """
+        # スコアの分散を促進
+        score_variance = torch.var(scores)
+        variance_loss = -score_variance  # 分散を大きくしたい
+        
+        # スコアの範囲を適切に保つ
+        score_range = torch.max(scores) - torch.min(scores)
+        range_loss = -score_range  # 範囲を大きくしたい
+        
+        # 平均を0.5付近に保つ
+        score_mean = torch.mean(scores)
+        mean_loss = torch.abs(score_mean - 0.5)
+        
+        regularization_loss = variance_loss + range_loss + mean_loss
+        
+        return regularization_loss
 
     def validate(self):
         """検証"""
@@ -274,18 +390,14 @@ class SuperPointScoreTrainer:
                     # スコアを計算
                     all_scores = self.score_module(superpoint_features)
                     
-                    # 上位スコアのスーパーポイントを選択
-                    top_k = max(int(len(all_scores) * self.score_threshold), 1)  # 最低1個は選択
-                    _, top_indices = torch.topk(all_scores, top_k)
-                    
-                    # 選択されたスーパーポイントでモデルを実行
-                    selected_data_dict = self._create_masked_data_dict(data_dict, top_indices)
+                    # 適応的閾値でソフトマスキング（検証時は推論設定）
+                    masked_data_dict, soft_mask = self._apply_soft_masking(data_dict, all_scores, is_training=False)
                     
                     # メインモデルの推論
-                    output_dict = self.model(selected_data_dict)
+                    output_dict = self.model(masked_data_dict)
                     
                     # 損失計算
-                    loss_dict = self.loss_func(output_dict, selected_data_dict)
+                    loss_dict = self.loss_func(output_dict, masked_data_dict)
                     loss = loss_dict['loss']
                     
                     total_loss += loss.item()
