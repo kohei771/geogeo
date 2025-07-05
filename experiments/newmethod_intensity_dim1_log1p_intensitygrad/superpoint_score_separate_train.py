@@ -10,15 +10,15 @@ class ScoreWeightTrainer:
     def __init__(self, cfg):
         self.cfg = cfg
         # モデル本体はfreeze
-        self.model = create_model(cfg)
+        self.model = create_model(cfg).cuda()
         for param in self.model.parameters():
             param.requires_grad = False
         self.model.eval()
         # スーパーポイントスコア重みのみ学習
-        self.score_module = SuperPointScoreModule(num_features=2)
+        self.score_module = SuperPointScoreModule(num_features=2).cuda()
         self.optimizer = torch.optim.Adam(self.score_module.parameters(), lr=cfg.optim.lr)
-        self.loss_func = OverallLoss(cfg)
-        self.evaluator = Evaluator(cfg)
+        self.loss_func = OverallLoss(cfg).cuda()
+        self.evaluator = Evaluator(cfg).cuda()
         self.train_loader, self.val_loader, _ = train_valid_data_loader(cfg, distributed=False)
         self.max_epoch = cfg.optim.max_epoch
         self.max_batches = 20  # 必要に応じてcfg化
