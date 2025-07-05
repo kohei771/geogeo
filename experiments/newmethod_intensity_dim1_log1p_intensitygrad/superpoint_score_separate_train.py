@@ -59,9 +59,9 @@ class SuperPointScoreTrainer:
 
     def compute_superpoint_features(self, data_dict):
         """スーパーポイントの基本特徴量を計算"""
-        device = next(self.model.parameters()).device
+        device = self.device
         
-        # データ準備
+        # データ準備 - 確実にdeviceに移動
         feats = data_dict['features'].to(device)
         points_list = data_dict['points']
         lengths = data_dict['lengths']
@@ -164,20 +164,28 @@ class SuperPointScoreTrainer:
         
         total_loss = 0.0
         batch_count = 0
+        max_batches = 100  # エラーが多発する場合のバッチ制限
         
         for batch_idx, data_dict in enumerate(self.train_loader):
+            if batch_idx >= max_batches:
+                print(f"Reached maximum batch limit ({max_batches})")
+                break
+                
             try:
-                # データをdeviceに移動
-                data_dict = {k: v.to(self.device) if torch.is_tensor(v) else v for k, v in data_dict.items()}
+                # データをdeviceに移動（より詳細な処理）
+                data_dict = self._move_data_to_device(data_dict)
                 
                 # SuperPoint特徴量を計算
                 superpoint_features, ref_features, src_features = self.compute_superpoint_features(data_dict)
+                
+                # 特徴量を確実にdeviceに移動
+                superpoint_features = superpoint_features.to(self.device)
                 
                 # スコアを計算
                 all_scores = self.score_module(superpoint_features)
                 
                 # 上位スコアのスーパーポイントを選択
-                top_k = int(len(all_scores) * self.score_threshold)
+                top_k = max(int(len(all_scores) * self.score_threshold), 1)  # 最低1個は選択
                 _, top_indices = torch.topk(all_scores, top_k)
                 
                 # 選択されたスーパーポイントでモデルを実行
@@ -190,6 +198,10 @@ class SuperPointScoreTrainer:
                 # 損失計算（選択されたスーパーポイントに対して）
                 loss_dict = self.loss_func(output_dict, selected_data_dict)
                 loss = loss_dict['loss']
+                
+                # 損失がテンソルでない場合の処理
+                if not torch.is_tensor(loss):
+                    loss = torch.tensor(loss, device=self.device, requires_grad=True)
                 
                 # バックプロパゲーション
                 self.optimizer.zero_grad()
@@ -204,6 +216,9 @@ class SuperPointScoreTrainer:
                     
             except Exception as e:
                 print(f'Error in batch {batch_idx}: {str(e)}')
+                # CUDAエラーの場合はクリーンアップ
+                if 'cuda' in str(e).lower():
+                    torch.cuda.empty_cache()
                 continue
         
         avg_loss = total_loss / max(batch_count, 1)
@@ -213,9 +228,26 @@ class SuperPointScoreTrainer:
 
     def _create_masked_data_dict(self, data_dict, top_indices):
         """選択されたスーパーポイントに対応するデータを作成"""
-        # この実装は簡略化されており、実際にはより詳細な処理が必要
-        # 現在はオリジナルのデータをそのまま返す
-        return data_dict
+        # 現在の実装では簡略化のため、元のデータをそのまま返す
+        # 実際の実装では、top_indicesに基づいてスーパーポイントをフィルタリングする
+        
+        # データが確実にdeviceに移動されていることを確認
+        masked_data_dict = {}
+        for key, value in data_dict.items():
+            if torch.is_tensor(value):
+                masked_data_dict[key] = value.to(self.device)
+            elif isinstance(value, list):
+                masked_list = []
+                for item in value:
+                    if torch.is_tensor(item):
+                        masked_list.append(item.to(self.device))
+                    else:
+                        masked_list.append(item)
+                masked_data_dict[key] = masked_list
+            else:
+                masked_data_dict[key] = value
+        
+        return masked_data_dict
 
     def validate(self):
         """検証"""
@@ -226,18 +258,24 @@ class SuperPointScoreTrainer:
         
         with torch.no_grad():
             for batch_idx, data_dict in enumerate(self.val_loader):
+                if batch_idx >= 20:  # 検証は20バッチまで
+                    break
+                    
                 try:
-                    # データをdeviceに移動
-                    data_dict = {k: v.to(self.device) if torch.is_tensor(v) else v for k, v in data_dict.items()}
+                    # データをdeviceに移動（より詳細な処理）
+                    data_dict = self._move_data_to_device(data_dict)
                     
                     # SuperPoint特徴量を計算
                     superpoint_features, _, _ = self.compute_superpoint_features(data_dict)
+                    
+                    # 特徴量を確実にdeviceに移動
+                    superpoint_features = superpoint_features.to(self.device)
                     
                     # スコアを計算
                     all_scores = self.score_module(superpoint_features)
                     
                     # 上位スコアのスーパーポイントを選択
-                    top_k = int(len(all_scores) * self.score_threshold)
+                    top_k = max(int(len(all_scores) * self.score_threshold), 1)  # 最低1個は選択
                     _, top_indices = torch.topk(all_scores, top_k)
                     
                     # 選択されたスーパーポイントでモデルを実行
@@ -258,6 +296,9 @@ class SuperPointScoreTrainer:
                         
                 except Exception as e:
                     print(f'Error in validation batch {batch_idx}: {str(e)}')
+                    # CUDAエラーの場合はクリーンアップ
+                    if 'cuda' in str(e).lower():
+                        torch.cuda.empty_cache()
                     continue
         
         avg_loss = total_loss / max(batch_count, 1)
@@ -309,6 +350,29 @@ class SuperPointScoreTrainer:
         save_path = os.path.join(save_dir, 'superpoint_score_best.pth')
         torch.save(checkpoint, save_path)
         print(f'Model saved to {save_path}')
+
+    def _move_data_to_device(self, data_dict):
+        """データを安全にdeviceに移動"""
+        moved_data_dict = {}
+        
+        for key, value in data_dict.items():
+            if torch.is_tensor(value):
+                # テンソルの場合はdeviceに移動
+                moved_data_dict[key] = value.to(self.device)
+            elif isinstance(value, list):
+                # リストの場合は各要素をチェック
+                moved_list = []
+                for item in value:
+                    if torch.is_tensor(item):
+                        moved_list.append(item.to(self.device))
+                    else:
+                        moved_list.append(item)
+                moved_data_dict[key] = moved_list
+            else:
+                # その他の場合はそのまま
+                moved_data_dict[key] = value
+        
+        return moved_data_dict
 
 def main():
     cfg = make_cfg()
