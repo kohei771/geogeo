@@ -83,21 +83,41 @@ def normalize_features(features, method='minmax', eps=1e-8):
     method: 'minmax', 'zscore', 'robust'
     return: (N, F) 正規化後の特徴量
     """
+    # 入力検証
+    if torch.isnan(features).any() or torch.isinf(features).any():
+        features = torch.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+    
     if method == 'minmax':
         minv = features.min(dim=0, keepdim=True)[0]
         maxv = features.max(dim=0, keepdim=True)[0]
-        normed = (features - minv) / (maxv - minv + eps)
+        range_v = maxv - minv
+        
+        # 範囲がゼロの場合の処理
+        range_v = torch.where(range_v < eps, torch.ones_like(range_v), range_v)
+        
+        normed = (features - minv) / range_v
     elif method == 'zscore':
         mean = features.mean(dim=0, keepdim=True)
         std = features.std(dim=0, keepdim=True)
-        normed = (features - mean) / (std + eps)
+        
+        # 標準偏差がゼロの場合の処理
+        std = torch.where(std < eps, torch.ones_like(std), std)
+        
+        normed = (features - mean) / std
     elif method == 'robust':
         # ロバスト正規化（中央値とMAD使用）
         median = features.median(dim=0, keepdim=True)[0]
         mad = torch.median(torch.abs(features - median), dim=0, keepdim=True)[0]
-        normed = (features - median) / (mad + eps)
+        
+        # MADがゼロの場合の処理
+        mad = torch.where(mad < eps, torch.ones_like(mad), mad)
+        
+        normed = (features - median) / mad
     else:
         raise ValueError(f'Unknown normalization method: {method}')
+    
+    # 最終的な検証
+    normed = torch.nan_to_num(normed, nan=0.0, posinf=0.0, neginf=0.0)
     
     return normed
 

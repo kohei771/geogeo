@@ -185,6 +185,12 @@ class ScoreWeightTrainer:
                         features = self._compute_extended_features(
                             valid_intensity_values, patch_points, density, feats_f.device
                         )
+                        
+                        # 特徴量の検証
+                        if torch.isnan(features).any() or torch.isinf(features).any():
+                            print(f"Warning: Invalid features from _compute_extended_features: nan={torch.isnan(features).sum()}, inf={torch.isinf(features).sum()}")
+                            features = torch.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+                        
                     except Exception as e:
                         print(f"Error in _compute_extended_features: {e}, using fallback")
                         # フォールバック：14個の特徴量を生成
@@ -437,18 +443,48 @@ class ScoreWeightTrainer:
                     # バッチ内すべてのテンソルをmodelのデバイスへ
                     for k, v in data_dict.items():
                         if isinstance(v, torch.Tensor):
+                            # テンソルの値を検証
+                            if torch.isnan(v).any() or torch.isinf(v).any():
+                                print(f"Warning: Invalid values detected in {k}: nan={torch.isnan(v).sum()}, inf={torch.isinf(v).sum()}")
+                                # NaN/Infを0で置き換え
+                                v = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
                             data_dict[k] = v.to(device)
                         elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
+                            # リスト内のテンソルも検証
+                            for i, x in enumerate(v):
+                                if torch.isnan(x).any() or torch.isinf(x).any():
+                                    print(f"Warning: Invalid values detected in {k}[{i}]: nan={torch.isnan(x).sum()}, inf={torch.isinf(x).sum()}")
+                                    v[i] = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
                             data_dict[k] = [x.to(device) for x in v]
                     
                     # 1. スーパーポイント特徴量の計算
                     all_superpoint_features, ref_features, src_features = self.compute_superpoint_features(data_dict)
                     
+                    # 特徴量の検証
+                    if torch.isnan(all_superpoint_features).any() or torch.isinf(all_superpoint_features).any():
+                        print(f"Warning: Invalid values in superpoint features: nan={torch.isnan(all_superpoint_features).sum()}, inf={torch.isinf(all_superpoint_features).sum()}")
+                        all_superpoint_features = torch.nan_to_num(all_superpoint_features, nan=0.0, posinf=0.0, neginf=0.0)
+                    
                     # 2. 特徴量の正規化
                     normalized_features = normalize_features(all_superpoint_features, method='minmax')
                     
+                    # 正規化後の検証
+                    if torch.isnan(normalized_features).any() or torch.isinf(normalized_features).any():
+                        print(f"Warning: Invalid values in normalized features: nan={torch.isnan(normalized_features).sum()}, inf={torch.isinf(normalized_features).sum()}")
+                        normalized_features = torch.nan_to_num(normalized_features, nan=0.0, posinf=0.0, neginf=0.0)
+                    
                     # 3. スコア計算
                     superpoint_scores = self.score_module(normalized_features)
+                    
+                    # スコアの検証
+                    if torch.isnan(superpoint_scores).any() or torch.isinf(superpoint_scores).any():
+                        print(f"Warning: Invalid values in superpoint scores: nan={torch.isnan(superpoint_scores).sum()}, inf={torch.isinf(superpoint_scores).sum()}")
+                        superpoint_scores = torch.nan_to_num(superpoint_scores, nan=0.5, posinf=1.0, neginf=0.0)
+                    
+                    # スコアの範囲チェック
+                    if (superpoint_scores < 0).any() or (superpoint_scores > 1).any():
+                        print(f"Warning: Superpoint scores out of range [0,1]: min={superpoint_scores.min()}, max={superpoint_scores.max()}")
+                        superpoint_scores = torch.clamp(superpoint_scores, 0.0, 1.0)
                     
                     # 4. 確率的マスキングの適用
                     weighted_data_dict, mask = self.apply_probabilistic_masking(data_dict.copy(), superpoint_scores)
@@ -855,6 +891,9 @@ class ScoreWeightTrainer:
                 eccentricity,      # 12: 点群の偏心率
                 density_gradient   # 13: 局所密度勾配
             ])
+            
+            # 最終的な検証とクリーンアップ
+            features = torch.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
             
             return features
             
