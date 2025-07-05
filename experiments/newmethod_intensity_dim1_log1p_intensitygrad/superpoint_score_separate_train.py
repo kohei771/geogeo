@@ -47,7 +47,10 @@ class ScoreWeightTrainer:
                 # デバイスを統一
                 device = next(self.model.parameters()).device
                 ref_feats = ref_feats.to(device)
-                ref_points = ref_points.to(device)
+                if not isinstance(ref_points, torch.Tensor):
+                    ref_points = torch.tensor(ref_points, device=device)
+                else:
+                    ref_points = ref_points.to(device)
                 # 仮: 密度・強度分散
                 density = torch.ones(ref_feats.shape[0], device=device)
                 intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0], device=device)
