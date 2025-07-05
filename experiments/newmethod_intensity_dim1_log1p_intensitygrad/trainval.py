@@ -53,7 +53,10 @@ class Trainer(EpochBasedTrainer):
 
 
 def main():
-    cfg = make_cfg()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--use_superpoint_score', action='store_true', help='use new superpoint score selection')
+    args = parser.parse_args()
+    cfg = make_cfg(use_superpoint_score=args.use_superpoint_score)
     trainer = Trainer(cfg)
     trainer.run()
 

@@ -145,10 +145,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--snapshot', type=str, default=None, help='Path to pretrained weights')
     parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
+    parser.add_argument('--use_superpoint_score', action='store_true', help='use new superpoint score selection')
     args, unknown = parser.parse_known_args()
     # --near そのものを sys.argv から除去
     sys.argv = [arg for arg in sys.argv if arg != '--near']
-    cfg = make_cfg(use_near=args.near)
+    cfg = make_cfg(use_near=args.near, use_superpoint_score=args.use_superpoint_score)
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
     tester = Tester(cfg)

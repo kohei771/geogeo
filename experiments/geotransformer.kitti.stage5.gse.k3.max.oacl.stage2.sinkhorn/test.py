@@ -1,14 +1,8 @@
 import argparse
-import os
 import os.path as osp
-import sys
 import time
-from datetime import datetime
 
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 from geotransformer.engine import SingleTester
 from geotransformer.utils.common import ensure_dir, get_log_string
@@ -23,27 +17,27 @@ from model import create_model
 class Tester(SingleTester):
     def __init__(self, cfg):
         super().__init__(cfg)
+
         # dataloader
         start_time = time.time()
         data_loader, neighbor_limits = test_data_loader(cfg)
         loading_time = time.time() - start_time
         message = f'Data loader created: {loading_time:.3f}s collapsed.'
         self.logger.info(message)
-        self.logger.info(f'Calibrate neighbors: {neighbor_limits}.')
+        message = f'Calibrate neighbors: {neighbor_limits}.'
+        self.logger.info(message)
         self.register_loader(data_loader)
+
         # model
         model = create_model(cfg).cuda()
         self.register_model(model)
+
         # evaluator
         self.evaluator = Evaluator(cfg).cuda()
+
         # preparation
         self.output_dir = osp.join(cfg.feature_dir)
         ensure_dir(self.output_dir)
-        exp_name = cfg.exp_name
-        vis_root = osp.join(os.getcwd(), "visualizations", exp_name)
-        ensure_dir(vis_root)
-        self.vis_dir = osp.join(vis_root, "vis")
-        ensure_dir(self.vis_dir)
 
     def test_step(self, iteration, data_dict):
         output_dict = self.model(data_dict)
@@ -62,58 +56,11 @@ class Tester(SingleTester):
         message += ', nCorr: {}'.format(output_dict['corr_scores'].shape[0])
         return message
 
-    def plot_registration(self, src, ref, src_aligned=None, title='', save_path=None):
-        import matplotlib.pyplot as plt
-        fig = plt.figure(figsize=(12, 6))
-        ax1 = fig.add_subplot(121, projection='3d')
-        ax1.scatter(src[:, 0], src[:, 1], src[:, 2], c='r', s=1, label='src')
-        ax1.scatter(ref[:, 0], ref[:, 1], ref[:, 2], c='b', s=1, label='ref')
-        ax1.set_title('Before Registration')
-        ax1.legend()
-        ax1.axis('off')
-        ax2 = fig.add_subplot(122, projection='3d')
-        if src_aligned is not None:
-            ax2.scatter(src_aligned[:, 0], src_aligned[:, 1], src_aligned[:, 2], c='r', s=1, label='src_aligned')
-        ax2.scatter(ref[:, 0], ref[:, 1], ref[:, 2], c='b', s=1, label='ref')
-        ax2.set_title('After Registration')
-        ax2.legend()
-        ax2.axis('off')
-        plt.suptitle(title)
-        plt.tight_layout()
-        if save_path is not None:
-            plt.savefig(save_path, dpi=300)
-        plt.close(fig)
-
     def after_test_step(self, iteration, data_dict, output_dict, result_dict):
         seq_id = data_dict['seq_id']
         ref_frame = data_dict['ref_frame']
         src_frame = data_dict['src_frame']
-        # 最初の1回だけ画像保存
-        if not hasattr(self, 'visualized'):
-            self.visualized = False
-        if not self.visualized:
-            src = output_dict['src_points']
-            ref = output_dict['ref_points']
-            est = output_dict['estimated_transform']
-            if hasattr(src, 'cpu'):
-                src = src.cpu().numpy()
-            if hasattr(ref, 'cpu'):
-                ref = ref.cpu().numpy()
-            if hasattr(est, 'cpu'):
-                est = est.cpu().numpy()
-            max_points = 50000
-            if src.shape[0] > max_points:
-                idx = np.random.choice(src.shape[0], max_points, replace=False)
-                src = src[idx]
-            if ref.shape[0] > max_points:
-                idx = np.random.choice(ref.shape[0], max_points, replace=False)
-                ref = ref[idx]
-            src_h = np.concatenate([src, np.ones((src.shape[0], 1))], axis=1)
-            src_aligned = (est @ src_h.T).T[:, :3]
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            save_path = osp.join(self.vis_dir, f'{seq_id}_{src_frame}_{ref_frame}_registration_{timestamp}.png')
-            self.plot_registration(src, ref, src_aligned, title=f'{seq_id} {src_frame}->{ref_frame}', save_path=save_path)
-            self.visualized = True
+
         file_name = osp.join(self.output_dir, f'{seq_id}_{src_frame}_{ref_frame}.npz')
         np.savez_compressed(
             file_name,
@@ -140,15 +87,13 @@ class Tester(SingleTester):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--snapshot', type=str, default=None, help='Path to pretrained weights')
-    parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
     args, unknown = parser.parse_known_args()
-    sys.argv = [arg for arg in sys.argv if arg != '--near']
-    # デフォルトでnewmethod、--near指定時はnewmethod_near
-    cfg = make_cfg(use_newmethod=True, use_near=args.near)
+    cfg = make_cfg()
     if args.snapshot is not None:
         cfg.snapshot = args.snapshot
     tester = Tester(cfg)
     tester.run()
+
 
 if __name__ == '__main__':
     main()

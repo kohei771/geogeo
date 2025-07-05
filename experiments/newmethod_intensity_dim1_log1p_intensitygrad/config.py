@@ -145,12 +145,13 @@ _C.loss.weight_coarse_loss = 1.0
 _C.loss.weight_fine_loss = 1.0
 
 _C.snapshot = 'weights/geotransformer-kitti.pth.tar'
-def make_cfg(use_near=False):
+def make_cfg(use_near=False, use_superpoint_score=False):
     cfg = _C.copy()
     # easydictのcopy()はdictになるので、edictに戻す
     from easydict import EasyDict as edict
     cfg = edict(cfg)
     cfg.use_near = use_near
+    cfg.use_superpoint_score = use_superpoint_score  # 新手法フラグ追加
     return cfg
 
 
