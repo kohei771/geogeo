@@ -48,8 +48,13 @@ class ScoreWeightTrainer:
                 # デバイスを統一
                 device = next(self.model.parameters()).device
                 ref_feats = ref_feats.to(device)
+                # ref_pointsをテンソル化しデバイスを揃える
                 if not isinstance(ref_points, torch.Tensor):
-                    ref_points = torch.from_numpy(np.asarray(ref_points)).to(device)
+                    ref_points = np.asarray(ref_points)
+                    if ref_points.dtype == object:
+                        # ネストしたリストの場合はstack
+                        ref_points = np.stack(ref_points)
+                    ref_points = torch.from_numpy(ref_points).float().to(device)
                 else:
                     ref_points = ref_points.to(device)
                 # 仮: 密度・強度分散
