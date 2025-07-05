@@ -22,7 +22,7 @@ class ScoreWeightTrainer:
         self.train_loader, self.val_loader, _ = train_valid_data_loader(cfg, distributed=False)
         self.max_epoch = cfg.optim.max_epoch
         self.max_batches = 20  # 必要に応じてcfg化
-        self.score_threshold = getattr(cfg, 'superpoint_score_threshold', 0.2)
+        self.score_threshold = getattr(cfg, 'superpoint_score_threshold', 0)
 
     def train(self):
         for epoch in range(self.max_epoch):
