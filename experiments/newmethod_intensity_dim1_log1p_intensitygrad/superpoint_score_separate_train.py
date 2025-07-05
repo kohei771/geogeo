@@ -437,25 +437,96 @@ class ScoreWeightTrainer:
                     break
                 
                 try:
+                    # 読み込まれたデータの最初の検証
+                    for k, v in data_dict.items():
+                        if isinstance(v, torch.Tensor):
+                            if torch.isnan(v).any() or torch.isinf(v).any():
+                                print(f"Warning: Raw data contains invalid values in {k}")
+                                data_dict[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+                        elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
+                            for i, x in enumerate(v):
+                                if torch.isnan(x).any() or torch.isinf(x).any():
+                                    print(f"Warning: Raw data contains invalid values in {k}[{i}]")
+                                    v[i] = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+                    
                     # デバイスを統一
                     device = next(self.model.parameters()).device
                     
                     # バッチ内すべてのテンソルをmodelのデバイスへ
                     for k, v in data_dict.items():
                         if isinstance(v, torch.Tensor):
-                            # テンソルの値を検証
-                            if torch.isnan(v).any() or torch.isinf(v).any():
-                                print(f"Warning: Invalid values detected in {k}: nan={torch.isnan(v).sum()}, inf={torch.isinf(v).sum()}")
-                                # NaN/Infを0で置き換え
-                                v = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
-                            data_dict[k] = v.to(device)
+                            # より詳細なテンソル検証
+                            try:
+                                # CPUでの検証
+                                if v.device != torch.device('cpu'):
+                                    v_cpu = v.cpu()
+                                else:
+                                    v_cpu = v
+                                
+                                # 値の範囲チェック
+                                if torch.isnan(v_cpu).any():
+                                    print(f"Error: NaN detected in {k}, shape: {v_cpu.shape}")
+                                    v_cpu = torch.nan_to_num(v_cpu, nan=0.0)
+                                
+                                if torch.isinf(v_cpu).any():
+                                    print(f"Error: Inf detected in {k}, shape: {v_cpu.shape}")
+                                    v_cpu = torch.nan_to_num(v_cpu, posinf=0.0, neginf=0.0)
+                                
+                                # 極端な値のチェック
+                                if v_cpu.dtype.is_floating_point:
+                                    min_val = v_cpu.min()
+                                    max_val = v_cpu.max()
+                                    if min_val < -1e6 or max_val > 1e6:
+                                        print(f"Warning: Extreme values in {k}: min={min_val}, max={max_val}")
+                                        v_cpu = torch.clamp(v_cpu, -1e6, 1e6)
+                                
+                                # インデックステンソルの場合の特別な処理
+                                if k in ['lengths', 'neighbors', 'subsampling', 'upsampling']:
+                                    if v_cpu.dtype.is_floating_point:
+                                        v_cpu = v_cpu.long()  # インデックスは整数型に変換
+                                    
+                                    # 負の値をチェック
+                                    if (v_cpu < 0).any():
+                                        print(f"Error: Negative indices in {k}")
+                                        v_cpu = torch.clamp(v_cpu, min=0)
+                                
+                                # 最終的にGPUに移動
+                                data_dict[k] = v_cpu.to(device)
+                                
+                            except Exception as e:
+                                print(f"Error processing tensor {k}: {e}")
+                                # フォールバック: ゼロテンソルで置換
+                                data_dict[k] = torch.zeros_like(v).to(device)
+                        
                         elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
-                            # リスト内のテンソルも検証
-                            for i, x in enumerate(v):
-                                if torch.isnan(x).any() or torch.isinf(x).any():
-                                    print(f"Warning: Invalid values detected in {k}[{i}]: nan={torch.isnan(x).sum()}, inf={torch.isinf(x).sum()}")
-                                    v[i] = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
-                            data_dict[k] = [x.to(device) for x in v]
+                            # リスト内のテンソルも同様に処理
+                            try:
+                                cleaned_list = []
+                                for i, x in enumerate(v):
+                                    if x.device != torch.device('cpu'):
+                                        x_cpu = x.cpu()
+                                    else:
+                                        x_cpu = x
+                                    
+                                    if torch.isnan(x_cpu).any() or torch.isinf(x_cpu).any():
+                                        print(f"Error: Invalid values in {k}[{i}]")
+                                        x_cpu = torch.nan_to_num(x_cpu, nan=0.0, posinf=0.0, neginf=0.0)
+                                    
+                                    # 負のインデックスチェック
+                                    if k in ['lengths', 'neighbors', 'subsampling', 'upsampling']:
+                                        if x_cpu.dtype.is_floating_point:
+                                            x_cpu = x_cpu.long()
+                                        if (x_cpu < 0).any():
+                                            print(f"Error: Negative indices in {k}[{i}]")
+                                            x_cpu = torch.clamp(x_cpu, min=0)
+                                    
+                                    cleaned_list.append(x_cpu.to(device))
+                                
+                                data_dict[k] = cleaned_list
+                            except Exception as e:
+                                print(f"Error processing list {k}: {e}")
+                                # フォールバック
+                                data_dict[k] = [torch.zeros_like(x).to(device) for x in v]
                     
                     # 1. スーパーポイント特徴量の計算
                     all_superpoint_features, ref_features, src_features = self.compute_superpoint_features(data_dict)
@@ -541,6 +612,20 @@ class ScoreWeightTrainer:
                     print(f"Error in batch {batch_count}: {e}")
                     print(f"Error type: {type(e).__name__}")
                     print(f"Traceback: {traceback.format_exc()}")
+                    
+                    # CUDA device-side assertエラーの場合の特別処理
+                    if "device-side assert" in str(e) or "AcceleratorError" in str(type(e).__name__):
+                        print(f"CUDA device-side assert error detected in batch {batch_count}")
+                        print("This is likely due to invalid tensor values (NaN/Inf/negative indices)")
+                        print("Clearing CUDA cache and skipping this batch...")
+                        
+                        # CUDAキャッシュをクリア
+                        torch.cuda.empty_cache()
+                        
+                        # 次のバッチに進む
+                        continue
+                    
+                    # 一般的なエラーの場合
                     continue
             
             avg_loss = epoch_loss / max(n_batches, 1)
