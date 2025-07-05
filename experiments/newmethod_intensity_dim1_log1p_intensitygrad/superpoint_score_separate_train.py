@@ -54,6 +54,11 @@ class ScoreWeightTrainer:
                 soft_scores = torch.sigmoid(scores).unsqueeze(1)  # (N, 1)
                 batch['features'] = ref_feats * soft_scores
                 batch['points'] = ref_points  # 全部使う
+                # デバイスを統一
+                device = next(self.model.parameters()).device
+                for k in ['features', 'points']:
+                    if isinstance(batch[k], torch.Tensor):
+                        batch[k] = batch[k].to(device)
                 # モデルforward
                 output_dict = self.model(batch)
                 loss_dict = self.loss_func(output_dict, batch)
