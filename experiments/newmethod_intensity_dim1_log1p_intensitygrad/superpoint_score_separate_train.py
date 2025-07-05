@@ -25,9 +25,12 @@ class ScoreWeightTrainer:
         self.loss_func = OverallLoss(cfg).cuda()
         self.evaluator = Evaluator(cfg).cuda()
         self.train_loader, self.val_loader, _ = train_valid_data_loader(cfg, distributed=False)
-        self.max_epoch = 10  # スコア学習は短期間で十分
-        self.max_batches = 50  # バッチ数を増やして安定化
+        self.max_epoch = 60   # しっかりと学習（trainval.pyの約1/3）
+        self.max_batches = 400  # より多くのデータで安定した学習
         self.score_threshold = getattr(cfg, 'superpoint_score_threshold', 0.5)
+        
+        # 学習率スケジューラーを追加
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.5)
 
     def compute_superpoint_features(self, data_dict):
         """
@@ -251,14 +254,20 @@ class ScoreWeightTrainer:
                     
                     self.optimizer.step()
                     
+                    # 学習率スケジューラーのステップ
+                    if batch_count == self.max_batches - 1:  # エポック終了時
+                        self.scheduler.step()
+                    
                     epoch_loss += total_loss.item()
                     n_batches += 1
                     
-                    if batch_count % 10 == 0:
+                    if batch_count % 20 == 0:  # 20バッチごとに出力
+                        current_lr = self.optimizer.param_groups[0]['lr']
                         print(f"[Epoch {epoch+1}/{self.max_epoch}] Batch {batch_count+1}/{self.max_batches} "
                               f"Total Loss: {total_loss.item():.4f} "
                               f"Main Loss: {main_loss.item():.4f} "
                               f"Score Loss: {score_loss.item():.4f} "
+                              f"LR: {current_lr:.6f} "
                               f"Weights: {self.score_module.weights.data.cpu().numpy()}")
                 
                 except Exception as e:
@@ -266,13 +275,72 @@ class ScoreWeightTrainer:
                     continue
             
             avg_loss = epoch_loss / max(n_batches, 1)
-            print(f"\nEpoch {epoch+1}: avg_loss={avg_loss:.4f}")
+            current_lr = self.optimizer.param_groups[0]['lr']
+            print(f"\nEpoch {epoch+1}: avg_loss={avg_loss:.4f}, lr={current_lr:.6f}")
             print(f"Current weights: {self.score_module.weights.data.cpu().numpy()}")
+            
+            # 早期停止の条件をチェック（オプション）
+            if epoch > 30 and avg_loss < 0.15:  # 30エポック後、損失が十分小さくなったら早期停止
+                print(f"Early stopping at epoch {epoch+1} (loss converged)")
+                break
+            
+            # 5エポックごとに検証
+            if (epoch + 1) % 5 == 0:
+                val_loss = self._validate_epoch()
+                print(f"Validation loss: {val_loss:.4f}")
         
         # 重みの保存
         torch.save(self.score_module.state_dict(), "score_weights.pth")
         print("score_weights.pth saved.")
         print(f"Final weights: {self.score_module.weights.data.cpu().numpy()}")
+    
+    def _validate_epoch(self):
+        """
+        検証エポックを実行
+        """
+        self.score_module.eval()
+        val_loss = 0.0
+        n_val_batches = 0
+        
+        with torch.no_grad():
+            for batch_count, data_dict in enumerate(self.val_loader):
+                if batch_count >= 20:  # 検証は20バッチのみ
+                    break
+                
+                try:
+                    device = next(self.model.parameters()).device
+                    
+                    # デバイス統一
+                    for k, v in data_dict.items():
+                        if isinstance(v, torch.Tensor):
+                            data_dict[k] = v.to(device)
+                        elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
+                            data_dict[k] = [x.to(device) for x in v]
+                    
+                    # スーパーポイント特徴量計算
+                    all_superpoint_features, _, _ = self.compute_superpoint_features(data_dict)
+                    normalized_features = normalize_features(all_superpoint_features, method='minmax')
+                    superpoint_scores = self.score_module(normalized_features)
+                    
+                    # ソフト重み付け適用
+                    weighted_data_dict = self.apply_soft_weighting(data_dict.copy(), superpoint_scores)
+                    
+                    # モデル推論
+                    output_dict = self.model(weighted_data_dict)
+                    
+                    # 損失計算
+                    main_loss_dict = self.loss_func(output_dict, weighted_data_dict)
+                    main_loss = main_loss_dict['loss']
+                    
+                    val_loss += main_loss.item()
+                    n_val_batches += 1
+                    
+                except Exception as e:
+                    print(f"Error in validation batch {batch_count}: {e}")
+                    continue
+        
+        self.score_module.train()
+        return val_loss / max(n_val_batches, 1)
     
     def _compute_score_loss(self, superpoint_scores, output_dict, data_dict):
         """
