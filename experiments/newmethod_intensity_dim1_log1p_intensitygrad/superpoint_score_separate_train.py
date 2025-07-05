@@ -53,6 +53,7 @@ class ScoreWeightTrainer:
                 scores = self.score_module(features)
                 # ソフト重みづけ: 特徴量にスコア（sigmoidで0-1化）を掛ける
                 soft_scores = torch.sigmoid(scores).unsqueeze(1)  # (N, 1)
+                soft_scores = soft_scores.to(ref_feats.device)    # ref_featsと同じデバイスに揃える
                 batch['features'] = ref_feats * soft_scores
                 batch['points'] = ref_points  # 全部使う
                 # デバイスを統一（バッチ内すべてのテンソルをmodelのデバイスへ）
