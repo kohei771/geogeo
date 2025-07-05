@@ -230,28 +230,35 @@ class ScoreWeightTrainer:
                     weighted_data_dict = self.apply_soft_weighting(data_dict.copy(), superpoint_scores)
                     
                     # 5. メインモデルでの推論
-                    with torch.no_grad():
-                        output_dict = self.model(weighted_data_dict)
+                    output_dict = self.model(weighted_data_dict)
                     
-                    # 6. 損失計算（スコアに対する勾配を計算するため、require_gradをTrueに）
-                    # スコアの分散を最小化し、高スコア点を選好するような損失を追加
+                    # 6. trainval.pyと同じ損失関数を使用
+                    main_loss_dict = self.loss_func(output_dict, weighted_data_dict)
+                    main_loss = main_loss_dict['loss']
+                    
+                    # 7. スーパーポイントスコアに対する追加損失
                     score_loss = self._compute_score_loss(superpoint_scores, output_dict, weighted_data_dict)
                     
-                    # 7. 逆伝播
+                    # 8. 総損失（メイン損失 + スコア損失）
+                    total_loss = main_loss + score_loss * 0.1  # スコア損失は小さな重みで加算
+                    
+                    # 9. 逆伝播
                     self.optimizer.zero_grad()
-                    score_loss.backward()
+                    total_loss.backward()
                     
                     # 勾配クリッピング
                     torch.nn.utils.clip_grad_norm_(self.score_module.parameters(), max_norm=1.0)
                     
                     self.optimizer.step()
                     
-                    epoch_loss += score_loss.item()
+                    epoch_loss += total_loss.item()
                     n_batches += 1
                     
                     if batch_count % 10 == 0:
                         print(f"[Epoch {epoch+1}/{self.max_epoch}] Batch {batch_count+1}/{self.max_batches} "
-                              f"Loss: {score_loss.item():.4f} "
+                              f"Total Loss: {total_loss.item():.4f} "
+                              f"Main Loss: {main_loss.item():.4f} "
+                              f"Score Loss: {score_loss.item():.4f} "
                               f"Weights: {self.score_module.weights.data.cpu().numpy()}")
                 
                 except Exception as e:
@@ -270,12 +277,14 @@ class ScoreWeightTrainer:
     def _compute_score_loss(self, superpoint_scores, output_dict, data_dict):
         """
         スーパーポイントスコアに対する損失を計算
+        損失は常に正の値で、小さいほど良い
         """
-        # 基本的な損失: スコアの分散を抑制（極端な値を避ける）
+        device = superpoint_scores.device
+        
+        # 1. スコア分散損失（極端な値を避ける）
         score_variance_loss = torch.var(superpoint_scores) * 0.1
         
-        # 高スコア点を選好する損失
-        # 上位20%の点のスコアを高く、下位20%の点のスコアを低くする
+        # 2. 改良された選好損失（常に正の値）
         num_points = superpoint_scores.shape[0]
         top_k = max(1, num_points // 5)
         bottom_k = max(1, num_points // 5)
@@ -284,18 +293,37 @@ class ScoreWeightTrainer:
         top_scores, _ = torch.topk(superpoint_scores, top_k, largest=True)
         bottom_scores, _ = torch.topk(superpoint_scores, bottom_k, largest=False)
         
-        # 上位スコアを高く、下位スコアを低くする損失
-        preference_loss = -torch.mean(top_scores) + torch.mean(bottom_scores)
+        # 上位スコアは1.0に近く、下位スコアは0.0に近くなるように損失を計算
+        # 上位スコアが高いほど損失は小さく、下位スコアが低いほど損失は小さい
+        top_target = torch.ones_like(top_scores)
+        bottom_target = torch.zeros_like(bottom_scores)
         
-        # マッチング品質に基づく損失（可能であれば）
-        matching_quality_loss = torch.tensor(0.0, device=superpoint_scores.device)
+        preference_loss = (
+            F.mse_loss(torch.sigmoid(top_scores), top_target) +
+            F.mse_loss(torch.sigmoid(bottom_scores), bottom_target)
+        )
+        
+        # 3. スコア分布の多様性を促進（全て同じ値にならないように）
+        # スコアの範囲を広げることを促進
+        score_range = torch.max(superpoint_scores) - torch.min(superpoint_scores)
+        diversity_loss = torch.exp(-score_range)  # 範囲が狭いほど大きな損失
+        
+        # 4. マッチング品質に基づく損失（改良版）
+        matching_quality_loss = torch.tensor(0.0, device=device)
         if 'corr_scores' in output_dict:
             corr_scores = output_dict['corr_scores']
             if corr_scores is not None and len(corr_scores) > 0:
-                # 対応点の品質が高い場合は、それに関連するスーパーポイントのスコアを高くする
-                matching_quality_loss = -torch.mean(corr_scores) * 0.5
+                # 対応点の品質が低い場合に損失を大きくする
+                mean_corr_score = torch.mean(corr_scores)
+                matching_quality_loss = (1.0 - mean_corr_score) * 0.5  # 0-0.5の範囲
         
-        total_loss = score_variance_loss + preference_loss + matching_quality_loss
+        # 総損失（全て正の値）
+        total_loss = (
+            score_variance_loss +
+            preference_loss +
+            diversity_loss * 0.1 +
+            matching_quality_loss
+        )
         
         return total_loss
     
