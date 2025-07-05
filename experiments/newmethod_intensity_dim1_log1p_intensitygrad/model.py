@@ -132,6 +132,12 @@ class GeoTransformer(nn.Module):
         ref_points = ref_points.to(device)
         src_points = src_points.to(device)
 
+        # ここで再度デバイスを明示的に揃える
+        ref_points_c = ref_points_c.to(device)
+        src_points_c = src_points_c.to(device)
+        ref_points_f = ref_points_f.to(device)
+        src_points_f = src_points_f.to(device)
+
         output_dict['ref_points_c'] = ref_points_c
         output_dict['src_points_c'] = src_points_c
         output_dict['ref_points_f'] = ref_points_f
