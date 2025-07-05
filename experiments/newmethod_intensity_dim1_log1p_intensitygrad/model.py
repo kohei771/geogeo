@@ -19,6 +19,22 @@ from backbone import KPConvFPN
 from geotransformer.utils.superpoint_score import SuperPointScoreModule, normalize_features
 
 
+def safe_item(value):
+    """
+    Safely extract a scalar value from a tensor or return the value if it's already a scalar.
+    
+    Args:
+        value: Can be a tensor, int, float, or any other scalar type
+    
+    Returns:
+        The scalar value
+    """
+    if hasattr(value, 'item'):
+        return value.item()
+    else:
+        return value
+
+
 def compute_intensity_gradient_torch(points, intensity, k=1):
     # points: (N, 3), intensity: (N,)
     # 距離行列
@@ -103,9 +119,9 @@ class GeoTransformer(nn.Module):
         feats = data_dict['features'].detach()
         transform = data_dict['transform'].detach()
 
-        ref_length_c = data_dict['lengths'][-1][0].item()
-        ref_length_f = data_dict['lengths'][1][0].item()
-        ref_length = data_dict['lengths'][0][0].item()
+        ref_length_c = safe_item(data_dict['lengths'][-1][0])
+        ref_length_f = safe_item(data_dict['lengths'][1][0])
+        ref_length = safe_item(data_dict['lengths'][0][0])
         points_c = data_dict['points'][-1].detach()
         points_f = data_dict['points'][1].detach()
         points = data_dict['points'][0].detach()
@@ -195,7 +211,7 @@ class GeoTransformer(nn.Module):
             knn_idx = torch.clamp(knn_idx, 0, ref_intensity.shape[0] - 1)
             knn_intensity = ref_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
-            if valid_mask.any().item():
+            if safe_item(valid_mask.any()):
                 mean_val = knn_intensity[valid_mask].mean()
                 var_val = knn_intensity[valid_mask].var()
             else:
@@ -211,7 +227,7 @@ class GeoTransformer(nn.Module):
             knn_idx = torch.clamp(knn_idx, 0, src_intensity.shape[0] - 1)
             knn_intensity = src_intensity[knn_idx]
             valid_mask = (knn_intensity != 0)
-            if valid_mask.any().item():
+            if safe_item(valid_mask.any()):
                 mean_val = knn_intensity[valid_mask].mean()
                 var_val = knn_intensity[valid_mask].var()
             else:

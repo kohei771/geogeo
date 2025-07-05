@@ -997,7 +997,7 @@ if __name__ == "__main__":
             
             # Hard masking テスト
             mask, _ = trainer.apply_hard_masking(data_dict, threshold=0.5)
-            print(f"Hard mask (threshold=0.5): {mask.sum().item()}/{len(mask)} points selected")
+            print(f"Hard mask (threshold=0.5): {safe_item(mask.sum())}/{len(mask)} points selected")
             
             test_count += 1
             

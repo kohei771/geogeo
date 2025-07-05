@@ -18,6 +18,22 @@ from geotransformer.utils.superpoint_score import SuperPointScoreModule, normali
 from config import make_cfg
 from dataset import test_data_loader
 from loss import Evaluator
+
+
+def safe_item(value):
+    """
+    Safely extract a scalar value from a tensor or return the value if it's already a scalar.
+    
+    Args:
+        value: Can be a tensor, int, float, or any other scalar type
+    
+    Returns:
+        The scalar value
+    """
+    if hasattr(value, 'item'):
+        return value.item()
+    else:
+        return value
 from model import create_model
 
 
@@ -296,8 +312,8 @@ class Tester(SingleTester):
             ref_mask = mask[:ref_length]
             src_mask = mask[ref_length:ref_length + src_length]
             
-            new_ref_length = ref_mask.sum().item()
-            new_src_length = src_mask.sum().item()
+            new_ref_length = safe_item(ref_mask.sum())
+            new_src_length = safe_item(src_mask.sum())
             
             # lengthsを更新
             new_lengths = lengths.copy()
