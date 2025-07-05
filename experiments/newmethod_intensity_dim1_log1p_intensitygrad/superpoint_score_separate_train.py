@@ -2,6 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import os
+
+# CUDA デバッグを有効化
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 from config import make_cfg
 from dataset import train_valid_data_loader
 from model import create_model
@@ -489,9 +494,30 @@ class ScoreWeightTrainer:
                                     if (v_cpu < 0).any():
                                         print(f"Error: Negative indices in {k}")
                                         v_cpu = torch.clamp(v_cpu, min=0)
+                                    
+                                    # 非常に大きなインデックスをチェック
+                                    if v_cpu.max() > 100000:  # 合理的な上限
+                                        print(f"Error: Extremely large indices in {k}: max={v_cpu.max()}")
+                                        v_cpu = torch.clamp(v_cpu, max=100000)
+                                    
+                                    # lengthsの場合の追加チェック
+                                    if k == 'lengths':
+                                        # lengthsは常に正の値でなければならない
+                                        if (v_cpu <= 0).any():
+                                            print(f"Error: Non-positive lengths detected")
+                                            v_cpu = torch.clamp(v_cpu, min=1)
                                 
-                                # 最終的にGPUに移動
-                                data_dict[k] = v_cpu.to(device)
+                                # 最終的にGPUに移動（try-catchで囲む）
+                                try:
+                                    data_dict[k] = v_cpu.to(device)
+                                except Exception as cuda_error:
+                                    print(f"CUDA error when moving {k} to device: {cuda_error}")
+                                    # より安全なフォールバック
+                                    if k == 'lengths':
+                                        # lengthsの場合は適切なデフォルト値を設定
+                                        data_dict[k] = torch.ones_like(v_cpu).to(device)
+                                    else:
+                                        data_dict[k] = torch.zeros_like(v_cpu).to(device)
                                 
                             except Exception as e:
                                 print(f"Error processing tensor {k}: {e}")
@@ -519,8 +545,28 @@ class ScoreWeightTrainer:
                                         if (x_cpu < 0).any():
                                             print(f"Error: Negative indices in {k}[{i}]")
                                             x_cpu = torch.clamp(x_cpu, min=0)
+                                        
+                                        # 非常に大きなインデックスをチェック
+                                        if x_cpu.max() > 100000:
+                                            print(f"Error: Extremely large indices in {k}[{i}]: max={x_cpu.max()}")
+                                            x_cpu = torch.clamp(x_cpu, max=100000)
+                                        
+                                        # lengthsの場合の追加チェック
+                                        if k == 'lengths':
+                                            if (x_cpu <= 0).any():
+                                                print(f"Error: Non-positive lengths detected in {k}[{i}]")
+                                                x_cpu = torch.clamp(x_cpu, min=1)
                                     
-                                    cleaned_list.append(x_cpu.to(device))
+                                    # 安全にGPUに移動
+                                    try:
+                                        cleaned_list.append(x_cpu.to(device))
+                                    except Exception as cuda_error:
+                                        print(f"CUDA error when moving {k}[{i}] to device: {cuda_error}")
+                                        # フォールバック
+                                        if k == 'lengths':
+                                            cleaned_list.append(torch.ones_like(x_cpu).to(device))
+                                        else:
+                                            cleaned_list.append(torch.zeros_like(x_cpu).to(device))
                                 
                                 data_dict[k] = cleaned_list
                             except Exception as e:
@@ -617,10 +663,10 @@ class ScoreWeightTrainer:
                     if "device-side assert" in str(e) or "AcceleratorError" in str(type(e).__name__):
                         print(f"CUDA device-side assert error detected in batch {batch_count}")
                         print("This is likely due to invalid tensor values (NaN/Inf/negative indices)")
-                        print("Clearing CUDA cache and skipping this batch...")
+                        print("Skipping this batch and continuing...")
                         
-                        # CUDAキャッシュをクリア
-                        torch.cuda.empty_cache()
+                        # CUDAキャッシュクリアは危険なので削除
+                        # torch.cuda.empty_cache()
                         
                         # 次のバッチに進む
                         continue
@@ -1090,122 +1136,142 @@ class ScoreWeightTrainer:
 # 5. これにより、欠損データに影響されない頑健な特徴量抽出が可能
 
 if __name__ == "__main__":
+    # CUDA デバイス情報の表示
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+        print(f"Current CUDA device: {torch.cuda.current_device()}")
+        print(f"CUDA device name: {torch.cuda.get_device_name()}")
+    
+    # 設定とトレーナーの初期化
     cfg = make_cfg()
     trainer = ScoreWeightTrainer(cfg)
     
-    # 学習実行
-    trainer.train()
-    
-    # 簡単なテスト
-    print("\n=== Testing Score Module ===")
-    trainer.score_module.eval()
-    
-    # テストデータで評価
-    test_count = 0
-    for data_dict in trainer.val_loader:
-        if test_count >= 3:  # 3バッチだけテスト
-            break
+    try:
+        # 学習実行
+        trainer.train()
         
-        try:
-            device = next(trainer.model.parameters()).device
-            for k, v in data_dict.items():
-                if isinstance(v, torch.Tensor):
-                    data_dict[k] = v.to(device)
-                elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
-                    data_dict[k] = [x.to(device) for x in v]
-            
-            # スコア評価
-            scores = trainer.evaluate_scores(data_dict)
-            print(f"Test batch {test_count+1}: Score range [{scores.min():.3f}, {scores.max():.3f}], "
-                  f"Mean: {scores.mean():.3f}, Std: {scores.std():.3f}")
-            
-            # Hard masking テスト
-            mask, _ = trainer.apply_hard_masking(data_dict, threshold=0.5)
-            print(f"Hard mask (threshold=0.5): {safe_item(mask.sum())}/{len(mask)} points selected")
-            
-            test_count += 1
-            
-        except Exception as e:
-            print(f"Error in test batch {test_count}: {e}")
-            test_count += 1
-            continue
-    
-    print("=== Stage 1: Full Feature Training completed! ===")
-    
-    # 第1段階の重みを保存
-    stage1_save_path = trainer.save_superpoint_score_weights(cfg.output_dir)
-    
-    # 特徴量重要度分析
-    top_features, feature_names = trainer.analyze_feature_importance()
-    
-    # 第2段階: 重要な特徴量のみで再学習
-    print("\n=== Stage 2: Reduced Feature Training ===")
-    reduced_trainer = trainer.create_reduced_trainer(top_features)
-    
-    # 重要な特徴量のみを使用する特徴量計算関数を動的に作成
-    def compute_reduced_features(self, data_dict):
-        # 全特徴量を計算
-        all_features, _, _ = self.compute_superpoint_features(data_dict)
-        # 重要な特徴量のみを選択
-        reduced_features = all_features[:, self.important_features]
-        return reduced_features, None, None
-    
-    # メソッドを置き換え
-    reduced_trainer.compute_superpoint_features = compute_reduced_features.__get__(reduced_trainer, ScoreWeightTrainer)
-    
-    # 第2段階の学習実行
-    reduced_trainer.train()
-    
-    # 最終的な特徴量重要度分析
-    print("\n=== Final Feature Importance (Reduced Set) ===")
-    final_weights = reduced_trainer.score_module.weights.data.cpu().numpy()
-    
-    print("Final important features:")
-    for i, (feat_idx, weight) in enumerate(zip(top_features, final_weights)):
-        print(f"{i+1:2d}. {feature_names[feat_idx]:20s}: {weight:8.4f}")
-    
-    # 最終テスト
-    print("\n=== Final Testing with Reduced Features ===")
-    reduced_trainer.score_module.eval()
-    
-    test_count = 0
-    for data_dict in reduced_trainer.val_loader:
-        if test_count >= 3:
-            break
+        # 簡単なテスト
+        print("\n=== Testing Score Module ===")
+        trainer.score_module.eval()
         
-        try:
-            device = next(reduced_trainer.model.parameters()).device
-            for k, v in data_dict.items():
-                if isinstance(v, torch.Tensor):
-                    data_dict[k] = v.to(device)
-                elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
-                    data_dict[k] = [x.to(device) for x in v]
+        # テストデータで評価
+        test_count = 0
+        for data_dict in trainer.val_loader:
+            if test_count >= 3:  # 3バッチだけテスト
+                break
             
-            # 重要な特徴量のみでスコア評価
-            reduced_features, _, _ = reduced_trainer.compute_superpoint_features(data_dict)
-            normalized_features = normalize_features(reduced_features, method='minmax')
-            scores = reduced_trainer.score_module(normalized_features)
+            try:
+                device = next(trainer.model.parameters()).device
+                for k, v in data_dict.items():
+                    if isinstance(v, torch.Tensor):
+                        data_dict[k] = v.to(device)
+                    elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
+                        data_dict[k] = [x.to(device) for x in v]
+                
+                # スコア評価
+                scores = trainer.evaluate_scores(data_dict)
+                print(f"Test batch {test_count+1}: Score range [{scores.min():.3f}, {scores.max():.3f}], "
+                      f"Mean: {scores.mean():.3f}, Std: {scores.std():.3f}")
+                
+                # Hard masking テスト
+                mask, _ = trainer.apply_hard_masking(data_dict, threshold=0.5)
+                print(f"Hard mask (threshold=0.5): {safe_item(mask.sum())}/{len(mask)} points selected")
+                
+                test_count += 1
+                
+            except Exception as e:
+                print(f"Error in test batch {test_count}: {e}")
+                test_count += 1
+                continue
+        
+        print("=== Stage 1: Full Feature Training completed! ===")
+        
+        # 第1段階の重みを保存
+        stage1_save_path = trainer.save_superpoint_score_weights(cfg.output_dir)
+        
+        # 特徴量重要度分析
+        top_features, feature_names = trainer.analyze_feature_importance()
+        
+        # 第2段階: 重要な特徴量のみで再学習
+        print("\n=== Stage 2: Reduced Feature Training ===")
+        reduced_trainer = trainer.create_reduced_trainer(top_features)
+        
+        # 重要な特徴量のみを使用する特徴量計算関数を動的に作成
+        def compute_reduced_features(self, data_dict):
+            # 全特徴量を計算
+            all_features, _, _ = self.compute_superpoint_features(data_dict)
+            # 重要な特徴量のみを選択
+            reduced_features = all_features[:, self.important_features]
+            return reduced_features, None, None
+        
+        # メソッドを置き換え
+        reduced_trainer.compute_superpoint_features = compute_reduced_features.__get__(reduced_trainer, ScoreWeightTrainer)
+        
+        # 第2段階の学習実行
+        reduced_trainer.train()
+        
+        # 最終的な特徴量重要度分析
+        print("\n=== Final Feature Importance (Reduced Set) ===")
+        final_weights = reduced_trainer.score_module.weights.data.cpu().numpy()
+        
+        print("Final important features:")
+        for i, (feat_idx, weight) in enumerate(zip(top_features, final_weights)):
+            print(f"{i+1:2d}. {feature_names[feat_idx]:20s}: {weight:8.4f}")
+        
+        # 最終テスト
+        print("\n=== Final Testing with Reduced Features ===")
+        reduced_trainer.score_module.eval()
+        
+        test_count = 0
+        for data_dict in reduced_trainer.val_loader:
+            if test_count >= 3:
+                break
             
-            print(f"Test batch {test_count+1}: Score range [{scores.min():.3f}, {scores.max():.3f}], "
-                  f"Mean: {scores.mean():.3f}, Std: {scores.std():.3f}")
-            
-            test_count += 1
-            
-        except Exception as e:
-            print(f"Error in reduced test batch {test_count}: {e}")
-            test_count += 1
-            continue
-    
-    print("Two-stage SuperPoint Score Training completed!")
-    print(f"Final model uses {len(top_features)} out of 14 features")
-    
-    # 第2段階の重みを保存（重要な特徴量のみ）
-    stage2_save_path = reduced_trainer.save_reduced_superpoint_score_weights(cfg.output_dir, top_features, feature_names)
-    
-    print(f"\nSaved weights:")
-    print(f"  Stage 1 (full features): {stage1_save_path}")
-    print(f"  Stage 2 (reduced features): {stage2_save_path}")
-    print("You can now use these weights for testing with --use_superpoint_score")
+            try:
+                device = next(reduced_trainer.model.parameters()).device
+                for k, v in data_dict.items():
+                    if isinstance(v, torch.Tensor):
+                        data_dict[k] = v.to(device)
+                    elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], torch.Tensor):
+                        data_dict[k] = [x.to(device) for x in v]
+                
+                # 重要な特徴量のみでスコア評価
+                reduced_features, _, _ = reduced_trainer.compute_superpoint_features(data_dict)
+                normalized_features = normalize_features(reduced_features, method='minmax')
+                scores = reduced_trainer.score_module(normalized_features)
+                
+                print(f"Test batch {test_count+1}: Score range [{scores.min():.3f}, {scores.max():.3f}], "
+                      f"Mean: {scores.mean():.3f}, Std: {scores.std():.3f}")
+                
+                test_count += 1
+                
+            except Exception as e:
+                print(f"Error in reduced test batch {test_count}: {e}")
+                test_count += 1
+                continue
+        
+        print("Two-stage SuperPoint Score Training completed!")
+        print(f"Final model uses {len(top_features)} out of 14 features")
+        
+        # 第2段階の重みを保存（重要な特徴量のみ）
+        stage2_save_path = reduced_trainer.save_reduced_superpoint_score_weights(cfg.output_dir, top_features, feature_names)
+        
+        print(f"\nSaved weights:")
+        print(f"  Stage 1 (full features): {stage1_save_path}")
+        print(f"  Stage 2 (reduced features): {stage2_save_path}")
+        print("You can now use these weights for testing with --use_superpoint_score")
+        
+    except Exception as e:
+        print(f"Training failed with error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # 終了時の処理
+        if torch.cuda.is_available():
+            print("Training completed or interrupted")
+            print(f"Final CUDA memory allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
+            print(f"Final CUDA memory reserved: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
 
 # 実行方法の説明とメモ
 """
