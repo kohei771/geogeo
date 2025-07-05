@@ -72,7 +72,7 @@ class ScoreWeightTrainer:
         self.evaluator = Evaluator(cfg).cuda()
         self.train_loader, self.val_loader, _ = train_valid_data_loader(cfg, distributed=False)
         self.max_epoch = 60   # しっかりと学習（trainval.pyの約1/3）
-        self.max_batches = 100  # デバッグのために減らす
+        self.max_batches = 30  # 問題のあるバッチより前で止める
         self.score_threshold = getattr(cfg, 'superpoint_score_threshold', 0.5)
         
         print(f"Train loader batch size: {getattr(self.train_loader, 'batch_size', 'Unknown')}")
@@ -457,6 +457,13 @@ class ScoreWeightTrainer:
                             if isinstance(item, torch.Tensor):
                                 print(f"    [{i}]: shape={item.shape}, dtype={item.dtype}")
                 
+                # バッチ35以降で問題が発生する場合、プロセスを再起動する必要がある
+                if batch_count >= 35:
+                    print(f"Batch {batch_count}: Stopping training due to persistent CUDA errors")
+                    print("This appears to be a CUDA state corruption issue that requires process restart")
+                    print("Please restart the training script")
+                    break
+                
                 try:
                     # 読み込まれたデータの最初の検証
                     for k, v in data_dict.items():
@@ -669,7 +676,7 @@ class ScoreWeightTrainer:
                     epoch_loss += safe_item(total_loss)
                     n_batches += 1
                     
-                    if batch_count % 20 == 0:  # 20バッチごとに出力
+                    if batch_count % 5 == 0:  # 5バッチごとに出力（より頻繁に）
                         current_lr = self.optimizer.param_groups[0]['lr']
                         print(f"[Epoch {epoch+1}/{self.max_epoch}] Batch {batch_count+1}/{self.max_batches} "
                               f"Total Loss: {safe_item(total_loss):.4f} "
@@ -678,8 +685,11 @@ class ScoreWeightTrainer:
                               f"LR: {current_lr:.6f} "
                               f"Weights: {self.score_module.weights.data.cpu().numpy()}")
                         
+                        # 成功バッチの統計
+                        print(f"Successfully processed batch {batch_count}")
+                        
                         # 強度データの統計を時々確認
-                        if batch_count % 100 == 0:
+                        if batch_count % 10 == 0:
                             self._debug_intensity_stats(data_dict)
                 
                 except Exception as e:
