@@ -237,13 +237,36 @@ class SuperPointScoreTrainer:
         
         return scores
 
+    def print_score_weights(self, epoch):
+        """各エポックでスコアモジュールの重みを表示"""
+        feature_names = ['密度', '強度分散', '強度平均', '強度勾配']
+        
+        print(f'\n=== Epoch {epoch} Score Weights ===')
+        
+        # 重みを取得
+        weights = self.score_module.linear.weight.data.cpu().numpy().flatten()
+        bias = self.score_module.linear.bias.data.cpu().numpy()[0] if self.score_module.linear.bias is not None else 0.0
+        
+        print(f'バイアス: {bias:.6f}')
+        print('特徴量重み:')
+        for i, (name, weight) in enumerate(zip(feature_names, weights)):
+            print(f'  {name}: {weight:.6f}')
+        
+        # 重みの統計情報
+        print(f'重み統計:')
+        print(f'  平均: {weights.mean():.6f}')
+        print(f'  標準偏差: {weights.std():.6f}')
+        print(f'  最大値: {weights.max():.6f}')
+        print(f'  最小値: {weights.min():.6f}')
+        print('=' * 35)
+
     def train_epoch(self, epoch):
         """1エポック分のトレーニング"""
         self.score_module.train()
         
         total_loss_value = 0.0
         batch_count = 0
-        max_batches = 100  # エラーが多発する場合のバッチ制限
+        max_batches = 500  # 学習データを増やす
         
         for batch_idx, data_dict in enumerate(self.train_loader):
             if batch_idx >= max_batches:
@@ -290,7 +313,7 @@ class SuperPointScoreTrainer:
                 total_loss_value += total_loss.item()
                 batch_count += 1
                 
-                if batch_idx % 10 == 0:
+                if batch_idx % 50 == 0:  # 50バッチごとに表示
                     mask_ratio = soft_mask.mean().item()
                     print(f'Epoch {epoch}, Batch {batch_idx}, Loss: {total_loss.item():.4f}, '
                           f'Main: {main_loss.item():.4f}, Reg: {score_reg_loss.item():.4f}, '
@@ -305,6 +328,9 @@ class SuperPointScoreTrainer:
         
         avg_loss = total_loss_value / max(batch_count, 1)
         print(f'Epoch {epoch} finished. Average Loss: {avg_loss:.4f}')
+        
+        # エポック終了時に重みを表示
+        self.print_score_weights(epoch)
         
         return avg_loss
 
@@ -458,7 +484,7 @@ class SuperPointScoreTrainer:
         
         with torch.no_grad():
             for batch_idx, data_dict in enumerate(self.val_loader):
-                if batch_idx >= 20:  # 検証は20バッチまで
+                if batch_idx >= 50:  # 検証データも増やす
                     break
                     
                 try:
@@ -487,7 +513,7 @@ class SuperPointScoreTrainer:
                     total_loss += loss.item()
                     batch_count += 1
                     
-                    if batch_idx >= 10:  # 検証は少数のバッチで十分
+                    if batch_idx >= 30:  # 検証は30バッチで十分
                         break
                         
                 except Exception as e:
@@ -505,6 +531,9 @@ class SuperPointScoreTrainer:
     def train(self):
         """メインの学習ループ"""
         print("Starting SuperPoint Score Training...")
+        
+        # 初期重みを表示
+        self.print_score_weights(-1)  # エポック-1として初期状態を表示
         
         best_val_loss = float('inf')
         
