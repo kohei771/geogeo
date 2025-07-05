@@ -166,15 +166,45 @@ class ScoreWeightTrainer:
                     ], device=feats_f.device)
                 else:
                     # 2つ以上の有効な強度値がある場合 - 全特徴量を計算
-                    features = self._compute_extended_features(
-                        valid_intensity_values, patch_points, density, feats_f.device
-                    )
+                    try:
+                        features = self._compute_extended_features(
+                            valid_intensity_values, patch_points, density, feats_f.device
+                        )
+                    except Exception as e:
+                        print(f"Error in _compute_extended_features: {e}, using fallback")
+                        # フォールバック：14個の特徴量を生成
+                        features = torch.zeros(14, device=feats_f.device)
+                        features[0] = density  # 密度だけは計算済み
+                        if len(valid_intensity_values) > 0:
+                            features[2] = torch.mean(valid_intensity_values)  # 強度平均
+                            if len(valid_intensity_values) > 1:
+                                features[1] = torch.var(valid_intensity_values)  # 強度分散
+                                features[3] = torch.max(valid_intensity_values) - torch.min(valid_intensity_values)  # 強度勾配
                 
                 features = features
             
             superpoint_features.append(features)
         
-        return torch.stack(superpoint_features)  # (N_superpoints, 4)
+        # デバッグ：特徴量サイズの確認
+        if len(superpoint_features) > 0:
+            feature_sizes = [f.shape[0] if len(f.shape) > 0 else 0 for f in superpoint_features]
+            unique_sizes = set(feature_sizes)
+            if len(unique_sizes) > 1:
+                print(f"ERROR: Inconsistent feature sizes: {unique_sizes}")
+                print(f"Expected: 14, Got sizes: {feature_sizes[:10]}...")
+                # 不正なサイズの特徴量を14次元に修正
+                fixed_features = []
+                for f in superpoint_features:
+                    if f.shape[0] != 14:
+                        print(f"Fixing feature from size {f.shape[0]} to 14")
+                        fixed_f = torch.zeros(14, device=f.device)
+                        fixed_f[:min(f.shape[0], 14)] = f[:min(f.shape[0], 14)]
+                        fixed_features.append(fixed_f)
+                    else:
+                        fixed_features.append(f)
+                superpoint_features = fixed_features
+        
+        return torch.stack(superpoint_features)  # (N_superpoints, 14)
     
     def apply_probabilistic_masking(self, data_dict, superpoint_scores):
         """
@@ -397,8 +427,8 @@ class ScoreWeightTrainer:
                     # 3. スコア計算
                     superpoint_scores = self.score_module(normalized_features)
                     
-                    # 4. ソフト重み付けの適用
-                    weighted_data_dict = self.apply_soft_weighting(data_dict.copy(), superpoint_scores)
+                    # 4. 確率的マスキングの適用
+                    weighted_data_dict, mask = self.apply_probabilistic_masking(data_dict.copy(), superpoint_scores)
                     
                     # 5. メインモデルでの推論
                     output_dict = self.model(weighted_data_dict)
@@ -542,8 +572,8 @@ class ScoreWeightTrainer:
                     normalized_features = normalize_features(all_superpoint_features, method='minmax')
                     superpoint_scores = self.score_module(normalized_features)
                     
-                    # ソフト重み付け適用
-                    weighted_data_dict = self.apply_soft_weighting(data_dict.copy(), superpoint_scores)
+                    # 確率的マスキング適用
+                    weighted_data_dict, mask = self.apply_probabilistic_masking(data_dict.copy(), superpoint_scores)
                     
                     # モデル推論
                     output_dict = self.model(weighted_data_dict)
@@ -665,114 +695,145 @@ class ScoreWeightTrainer:
         """
         拡張特徴量セットの計算
         14個の特徴量を計算: 基本4つ + 追加10個
+        エラーハンドリングを強化
         """
-        # 基本統計量
-        intensity_var = torch.var(valid_intensity_values)
-        intensity_mean = torch.mean(valid_intensity_values)
-        intensity_grad = torch.max(valid_intensity_values) - torch.min(valid_intensity_values)
-        
-        # 追加の強度統計量
-        intensity_median = torch.median(valid_intensity_values)
-        
-        # 歪度と尖度（scipy.stats風の計算）
-        if len(valid_intensity_values) >= 3:
-            centered = valid_intensity_values - intensity_mean
-            std_dev = torch.std(valid_intensity_values)
-            if std_dev > 1e-6:
-                skewness = torch.mean((centered / std_dev) ** 3)
-                kurtosis = torch.mean((centered / std_dev) ** 4) - 3  # excess kurtosis
+        try:
+            # 基本統計量
+            intensity_var = torch.var(valid_intensity_values)
+            intensity_mean = torch.mean(valid_intensity_values)
+            intensity_grad = torch.max(valid_intensity_values) - torch.min(valid_intensity_values)
+            
+            # 追加の強度統計量
+            intensity_median = torch.median(valid_intensity_values)
+            
+            # 歪度と尖度（scipy.stats風の計算）
+            if len(valid_intensity_values) >= 3:
+                try:
+                    centered = valid_intensity_values - intensity_mean
+                    std_dev = torch.std(valid_intensity_values)
+                    if std_dev > 1e-6:
+                        skewness = torch.mean((centered / std_dev) ** 3)
+                        kurtosis = torch.mean((centered / std_dev) ** 4) - 3  # excess kurtosis
+                    else:
+                        skewness = torch.tensor(0.0, device=device)
+                        kurtosis = torch.tensor(0.0, device=device)
+                except:
+                    skewness = torch.tensor(0.0, device=device)
+                    kurtosis = torch.tensor(0.0, device=device)
             else:
                 skewness = torch.tensor(0.0, device=device)
                 kurtosis = torch.tensor(0.0, device=device)
-        else:
-            skewness = torch.tensor(0.0, device=device)
-            kurtosis = torch.tensor(0.0, device=device)
-        
-        # 強度エントロピー（簡易版）
-        if len(valid_intensity_values) >= 2:
-            # ヒストグラムベースのエントロピー
-            hist = torch.histc(valid_intensity_values, bins=min(10, len(valid_intensity_values)), 
-                              min=valid_intensity_values.min(), max=valid_intensity_values.max())
-            hist = hist + 1e-10  # 数値安定性のため
-            prob = hist / hist.sum()
-            entropy = -torch.sum(prob * torch.log(prob))
-        else:
-            entropy = torch.tensor(0.0, device=device)
-        
-        # 幾何学的特徴量
-        if len(patch_points) >= 3:
-            # 点群の幾何学的分散（重心からの距離の分散）
-            centroid = torch.mean(patch_points, dim=0)
-            distances = torch.norm(patch_points - centroid, dim=1)
-            geometric_var = torch.var(distances)
             
-            # 最近傍距離統計
-            # 簡易版: 各点の最近傍距離の平均と分散
-            if len(patch_points) >= 2:
-                pairwise_dist = torch.cdist(patch_points, patch_points)
-                pairwise_dist = pairwise_dist + torch.eye(len(patch_points), device=device) * 1e6  # 自分自身を除外
-                min_distances = torch.min(pairwise_dist, dim=1)[0]
-                nn_dist_mean = torch.mean(min_distances)
-                nn_dist_var = torch.var(min_distances) if len(min_distances) > 1 else torch.tensor(0.0, device=device)
-            else:
+            # 強度エントロピー（簡易版）
+            try:
+                if len(valid_intensity_values) >= 2:
+                    # ヒストグラムベースのエントロピー
+                    hist = torch.histc(valid_intensity_values, bins=min(10, len(valid_intensity_values)), 
+                                      min=valid_intensity_values.min(), max=valid_intensity_values.max())
+                    hist = hist + 1e-10  # 数値安定性のため
+                    prob = hist / hist.sum()
+                    entropy = -torch.sum(prob * torch.log(prob))
+                else:
+                    entropy = torch.tensor(0.0, device=device)
+            except:
+                entropy = torch.tensor(0.0, device=device)
+            
+            # 幾何学的特徴量
+            try:
+                if len(patch_points) >= 3:
+                    # 点群の幾何学的分散（重心からの距離の分散）
+                    centroid = torch.mean(patch_points, dim=0)
+                    distances = torch.norm(patch_points - centroid, dim=1)
+                    geometric_var = torch.var(distances)
+                    
+                    # 最近傍距離統計
+                    if len(patch_points) >= 2:
+                        pairwise_dist = torch.cdist(patch_points, patch_points)
+                        pairwise_dist = pairwise_dist + torch.eye(len(patch_points), device=device) * 1e6
+                        min_distances = torch.min(pairwise_dist, dim=1)[0]
+                        nn_dist_mean = torch.mean(min_distances)
+                        nn_dist_var = torch.var(min_distances) if len(min_distances) > 1 else torch.tensor(0.0, device=device)
+                    else:
+                        nn_dist_mean = torch.tensor(0.0, device=device)
+                        nn_dist_var = torch.tensor(0.0, device=device)
+                    
+                    # 点群の広がり（各軸の範囲の平均）
+                    point_spans = torch.max(patch_points, dim=0)[0] - torch.min(patch_points, dim=0)[0]
+                    span_mean = torch.mean(point_spans)
+                    
+                    # 点群の偏心率（主成分分析的な簡易版）
+                    if len(patch_points) >= 3:
+                        try:
+                            centered_points = patch_points - centroid
+                            cov_matrix = torch.mm(centered_points.t(), centered_points) / (len(patch_points) - 1)
+                            eigenvals = torch.linalg.eigvals(cov_matrix).real
+                            eigenvals = torch.sort(eigenvals, descending=True)[0]
+                            if eigenvals[0] > 1e-6:
+                                eccentricity = 1 - eigenvals[-1] / eigenvals[0]
+                            else:
+                                eccentricity = torch.tensor(0.0, device=device)
+                        except:
+                            eccentricity = torch.tensor(0.0, device=device)
+                    else:
+                        eccentricity = torch.tensor(0.0, device=device)
+                else:
+                    geometric_var = torch.tensor(0.0, device=device)
+                    nn_dist_mean = torch.tensor(0.0, device=device)
+                    nn_dist_var = torch.tensor(0.0, device=device)
+                    span_mean = torch.tensor(0.0, device=device)
+                    eccentricity = torch.tensor(0.0, device=device)
+            except:
+                geometric_var = torch.tensor(0.0, device=device)
                 nn_dist_mean = torch.tensor(0.0, device=device)
                 nn_dist_var = torch.tensor(0.0, device=device)
-            
-            # 点群の広がり（各軸の範囲の平均）
-            point_spans = torch.max(patch_points, dim=0)[0] - torch.min(patch_points, dim=0)[0]
-            span_mean = torch.mean(point_spans)
-            
-            # 点群の偏心率（主成分分析的な簡易版）
-            if len(patch_points) >= 3:
-                centered_points = patch_points - centroid
-                cov_matrix = torch.mm(centered_points.t(), centered_points) / (len(patch_points) - 1)
-                eigenvals = torch.linalg.eigvals(cov_matrix).real
-                eigenvals = torch.sort(eigenvals, descending=True)[0]
-                if eigenvals[0] > 1e-6:
-                    eccentricity = 1 - eigenvals[-1] / eigenvals[0]  # 1 - (smallest/largest eigenvalue)
-                else:
-                    eccentricity = torch.tensor(0.0, device=device)
-            else:
+                span_mean = torch.tensor(0.0, device=device)
                 eccentricity = torch.tensor(0.0, device=device)
-        else:
-            geometric_var = torch.tensor(0.0, device=device)
-            nn_dist_mean = torch.tensor(0.0, device=device)
-            nn_dist_var = torch.tensor(0.0, device=device)
-            span_mean = torch.tensor(0.0, device=device)
-            eccentricity = torch.tensor(0.0, device=device)
-        
-        # 局所密度勾配（簡易版: 密度の空間的変化）
-        if len(patch_points) >= 5:
-            # 中心から各点までの距離で密度の変化を推定
-            centroid = torch.mean(patch_points, dim=0)
-            distances = torch.norm(patch_points - centroid, dim=1)
-            # 距離に基づく密度勾配の推定
-            if torch.std(distances) > 1e-6:
-                density_gradient = torch.std(distances) / torch.mean(distances)
-            else:
+            
+            # 局所密度勾配（簡易版）
+            try:
+                if len(patch_points) >= 5:
+                    centroid = torch.mean(patch_points, dim=0)
+                    distances = torch.norm(patch_points - centroid, dim=1)
+                    if torch.std(distances) > 1e-6:
+                        density_gradient = torch.std(distances) / torch.mean(distances)
+                    else:
+                        density_gradient = torch.tensor(0.0, device=device)
+                else:
+                    density_gradient = torch.tensor(0.0, device=device)
+            except:
                 density_gradient = torch.tensor(0.0, device=device)
-        else:
-            density_gradient = torch.tensor(0.0, device=device)
-        
-        # 14個の特徴量をスタック
-        features = torch.stack([
-            density,           # 0: 密度
-            intensity_var,     # 1: 強度分散
-            intensity_mean,    # 2: 強度平均  
-            intensity_grad,    # 3: 強度勾配
-            intensity_median,  # 4: 強度中央値
-            skewness,          # 5: 強度歪度
-            kurtosis,          # 6: 強度尖度
-            entropy,           # 7: 強度エントロピー
-            geometric_var,     # 8: 幾何学的分散
-            nn_dist_mean,      # 9: 最近傍距離平均
-            nn_dist_var,       # 10: 最近傍距離分散
-            span_mean,         # 11: 点群の広がり
-            eccentricity,      # 12: 点群の偏心率
-            density_gradient   # 13: 局所密度勾配
-        ])
-        
-        return features
+            
+            # 14個の特徴量をスタック
+            features = torch.stack([
+                density,           # 0: 密度
+                intensity_var,     # 1: 強度分散
+                intensity_mean,    # 2: 強度平均  
+                intensity_grad,    # 3: 強度勾配
+                intensity_median,  # 4: 強度中央値
+                skewness,          # 5: 強度歪度
+                kurtosis,          # 6: 強度尖度
+                entropy,           # 7: 強度エントロピー
+                geometric_var,     # 8: 幾何学的分散
+                nn_dist_mean,      # 9: 最近傍距離平均
+                nn_dist_var,       # 10: 最近傍距離分散
+                span_mean,         # 11: 点群の広がり
+                eccentricity,      # 12: 点群の偏心率
+                density_gradient   # 13: 局所密度勾配
+            ])
+            
+            return features
+            
+        except Exception as e:
+            print(f"Critical error in _compute_extended_features: {e}")
+            # 最終的なフォールバック：基本的な14個の特徴量を生成
+            features = torch.zeros(14, device=device)
+            features[0] = density  # 密度は確実に設定
+            if len(valid_intensity_values) > 0:
+                features[2] = torch.mean(valid_intensity_values)  # 強度平均
+                if len(valid_intensity_values) > 1:
+                    features[1] = torch.var(valid_intensity_values)  # 強度分散
+                    features[3] = torch.max(valid_intensity_values) - torch.min(valid_intensity_values)  # 強度勾配
+            return features
 
     def analyze_feature_importance(self):
         """
