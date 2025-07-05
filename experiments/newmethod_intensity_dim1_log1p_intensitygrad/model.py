@@ -104,12 +104,26 @@ class GeoTransformer(nn.Module):
         points_f = data_dict['points'][1].detach()
         points = data_dict['points'][0].detach()
 
+        # 追加: すべてのテンソルをfeatsと同じデバイスに揃える
+        device = feats.device
+        points_c = points_c.to(device)
+        points_f = points_f.to(device)
+        points = points.to(device)
+        transform = transform.to(device)
+
         ref_points_c = points_c[:ref_length_c]
         src_points_c = points_c[ref_length_c:]
         ref_points_f = points_f[:ref_length_f]
         src_points_f = points_f[ref_length_f:]
         ref_points = points[:ref_length]
         src_points = points[ref_length:]
+
+        ref_points_c = ref_points_c.to(device)
+        src_points_c = src_points_c.to(device)
+        ref_points_f = ref_points_f.to(device)
+        src_points_f = src_points_f.to(device)
+        ref_points = ref_points.to(device)
+        src_points = src_points.to(device)
 
         output_dict['ref_points_c'] = ref_points_c
         output_dict['src_points_c'] = src_points_c
