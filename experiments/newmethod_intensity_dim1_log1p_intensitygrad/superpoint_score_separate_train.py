@@ -44,20 +44,22 @@ class ScoreWeightTrainer:
                     ref_points = batch.get('points', None)
                 if ref_points is None:
                     raise KeyError(f"No suitable points key found in batch: {batch.keys()}")
+                # デバイスを統一
+                device = next(self.model.parameters()).device
+                ref_feats = ref_feats.to(device)
+                ref_points = ref_points.to(device)
                 # 仮: 密度・強度分散
-                density = torch.ones(ref_feats.shape[0])
-                intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0])
+                density = torch.ones(ref_feats.shape[0], device=device)
+                intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0], device=device)
                 features = normalize_features(torch.stack([density, intensity_var], dim=1), method='minmax')
-                features = features.to(self.score_module.weights.device)  # デバイスをscore_moduleに合わせる
+                features = features.to(self.score_module.weights.device)
                 # スコア計算
                 scores = self.score_module(features)
                 # ソフト重みづけ: 特徴量にスコア（sigmoidで0-1化）を掛ける
-                soft_scores = torch.sigmoid(scores).unsqueeze(1)  # (N, 1)
-                soft_scores = soft_scores.to(ref_feats.device)    # ref_featsと同じデバイスに揃える
+                soft_scores = torch.sigmoid(scores).unsqueeze(1).to(ref_feats.device)
                 batch['features'] = ref_feats * soft_scores
-                batch['points'] = ref_points  # 全部使う
-                # デバイスを統一（バッチ内すべてのテンソルをmodelのデバイスへ）
-                device = next(self.model.parameters()).device
+                batch['points'] = ref_points
+                # バッチ内すべてのテンソルをmodelのデバイスへ
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(device)
