@@ -64,9 +64,10 @@ class ScoreWeightTrainer:
                 if ref_points.ndim == 1:
                     ref_points = ref_points.unsqueeze(0)
                 # 2次元だが shape[1] != 3 の場合、reshape できるなら reshape
-                if ref_points.ndim == 2 and ref_points.shape[1] != 3:
-                    if ref_points.numel() % 3 == 0:
-                        ref_points = ref_points.reshape(-1, 3)
+                if ref_points.ndim == 2 and ref_points.shape[1] != 3 and ref_points.numel() % 3 == 0:
+                    ref_points = ref_points.reshape(-1, 3)
+                if ref_points.ndim != 2 or ref_points.shape[1] != 3:
+                    raise ValueError(f"ref_points shape must be (N, 3), but got {ref_points.shape}")
                 # 仮: 密度・強度分散
                 density = torch.ones(ref_feats.shape[0], device=device)
                 intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0], device=device)
