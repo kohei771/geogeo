@@ -22,10 +22,10 @@ def index_select(data: torch.Tensor, index: torch.LongTensor, dim: int) -> torch
     Returns:
         output (Tensor): (a_0, ..., a_{dim-1}, b_0, ..., b_{m-1}, a_{dim+1}, ..., a_{n-1})
     """
-    output = data.index_select(dim, index.view(-1))
+    output = data.index_select(dim, index.reshape(-1))
 
     if index.ndim > 1:
         output_shape = data.shape[:dim] + index.shape + data.shape[dim:][1:]
-        output = output.view(*output_shape)
+        output = output.reshape(*output_shape)
 
     return output
