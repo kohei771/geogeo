@@ -60,6 +60,9 @@ class ScoreWeightTrainer:
                         ref_points = torch.as_tensor(ref_points, dtype=torch.float32, device=device)
                 else:
                     ref_points = ref_points.to(device)
+                # 1次元なら2次元に変換
+                if ref_points.ndim == 1:
+                    ref_points = ref_points.unsqueeze(0)
                 # 仮: 密度・強度分散
                 density = torch.ones(ref_feats.shape[0], device=device)
                 intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0], device=device)
