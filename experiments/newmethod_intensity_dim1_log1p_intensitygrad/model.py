@@ -119,54 +119,12 @@ class GeoTransformer(nn.Module):
         feats = data_dict['features'].detach()
         transform = data_dict['transform'].detach()
 
-        ref_length_c = safe_item(data_dict['lengths'][-1][0])
-        ref_length_f = safe_item(data_dict['lengths'][1][0])
-        ref_length = safe_item(data_dict['lengths'][0][0])
+        ref_length_c = int(safe_item(data_dict['lengths'][-1][0]))
+        ref_length_f = int(safe_item(data_dict['lengths'][1][0]))
+        ref_length = int(safe_item(data_dict['lengths'][0][0]))
         points_c = data_dict['points'][-1].detach()
         points_f = data_dict['points'][1].detach()
         points = data_dict['points'][0].detach()
-
-        # 追加: すべてのテンソルをfeatsと同じデバイスに揃える
-        device = feats.device
-        points_c = points_c.to(device)
-        points_f = points_f.to(device)
-        points = points.to(device)
-        transform = transform.to(device)
-        # 追加: lengths, neighbors, subsampling, upsampling もデバイス統一
-        def move_to_device(obj, device):
-            """Recursively move tensors to device, handling nested lists"""
-            if obj is None:
-                return None
-            elif isinstance(obj, list):
-                result = []
-                for item in obj:
-                    result.append(move_to_device(item, device))
-                return result
-            elif hasattr(obj, 'to') and callable(getattr(obj, 'to')):
-                try:
-                    return obj.to(device)
-                except Exception as e:
-                    print(f"Failed to move tensor to device: {type(obj)}, error: {e}")
-                    return obj
-            else:
-                # テンソルではない場合（int, float, str など）はそのまま返す
-                return obj
-        
-        for k in ['lengths', 'neighbors', 'subsampling', 'upsampling']:
-            if k in data_dict:
-                try:
-                    data_dict[k] = move_to_device(data_dict[k], device)
-                except Exception as e:
-                    print(f"Error moving {k} to device: {type(data_dict[k])}")
-                    if isinstance(data_dict[k], list):
-                        print(f"List length: {len(data_dict[k])}")
-                        if len(data_dict[k]) > 0:
-                            print(f"First item type: {type(data_dict[k][0])}")
-                            if isinstance(data_dict[k][0], list):
-                                print(f"First item is list with length: {len(data_dict[k][0])}")
-                                if len(data_dict[k][0]) > 0:
-                                    print(f"First item's first element type: {type(data_dict[k][0][0])}")
-                    raise e
 
         ref_points_c = points_c[:ref_length_c]
         src_points_c = points_c[ref_length_c:]
@@ -174,19 +132,6 @@ class GeoTransformer(nn.Module):
         src_points_f = points_f[ref_length_f:]
         ref_points = points[:ref_length]
         src_points = points[ref_length:]
-
-        ref_points_c = ref_points_c.to(device)
-        src_points_c = src_points_c.to(device)
-        ref_points_f = ref_points_f.to(device)
-        src_points_f = src_points_f.to(device)
-        ref_points = ref_points.to(device)
-        src_points = src_points.to(device)
-
-        # ここで再度デバイスを明示的に揃える
-        ref_points_c = ref_points_c.to(device)
-        src_points_c = src_points_c.to(device)
-        ref_points_f = ref_points_f.to(device)
-        src_points_f = src_points_f.to(device)
 
         output_dict['ref_points_c'] = ref_points_c
         output_dict['src_points_c'] = src_points_c
