@@ -9,6 +9,15 @@ from geotransformer.utils.superpoint_score import SuperPointScoreModule, normali
 from loss import OverallLoss, Evaluator
 from geotransformer.modules.ops import point_to_node_partition
 
+def safe_item(value):
+    """
+    安全に.item()を呼び出すヘルパー関数
+    """
+    if hasattr(value, 'item'):
+        return value.item()
+    else:
+        return int(value)
+
 class ScoreWeightTrainer:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -73,8 +82,8 @@ class ScoreWeightTrainer:
         lengths = data_dict['lengths']
         
         # 最粗レベル（スーパーポイント）と細かいレベルの点群を取得
-        ref_length_c = lengths[-1][0].item()
-        ref_length_f = lengths[1][0].item()
+        ref_length_c = safe_item(lengths[-1][0])
+        ref_length_f = safe_item(lengths[1][0])
         
         points_c = points_list[-1].to(device)  # 最粗レベル（スーパーポイント）
         points_f = points_list[1].to(device)   # 細かいレベル
@@ -126,8 +135,8 @@ class ScoreWeightTrainer:
             valid_indices = torch.clamp(valid_indices, 0, feats_f.shape[0] - 1)
             
             if len(valid_indices) == 0:
-                # 有効な点がない場合はゼロ特徴量
-                features = torch.zeros(4, device=feats_f.device)
+                # 有効な点がない場合は14次元のゼロ特徴量
+                features = torch.zeros(14, device=feats_f.device)
             else:
                 # 対応する点の特徴量（intensity）
                 patch_feats = feats_f[valid_indices]
@@ -185,24 +194,32 @@ class ScoreWeightTrainer:
             
             superpoint_features.append(features)
         
-        # デバッグ：特徴量サイズの確認
+        # デバッグ：特徴量サイズの確認と自動修正
         if len(superpoint_features) > 0:
             feature_sizes = [f.shape[0] if len(f.shape) > 0 else 0 for f in superpoint_features]
             unique_sizes = set(feature_sizes)
-            if len(unique_sizes) > 1:
-                print(f"ERROR: Inconsistent feature sizes: {unique_sizes}")
-                print(f"Expected: 14, Got sizes: {feature_sizes[:10]}...")
-                # 不正なサイズの特徴量を14次元に修正
+            if len(unique_sizes) > 1 or 14 not in unique_sizes:
+                print(f"WARNING: Inconsistent or incorrect feature sizes: {unique_sizes}")
+                # 全特徴量を14次元に強制修正
                 fixed_features = []
-                for f in superpoint_features:
+                for i, f in enumerate(superpoint_features):
                     if f.shape[0] != 14:
-                        print(f"Fixing feature from size {f.shape[0]} to 14")
-                        fixed_f = torch.zeros(14, device=f.device)
-                        fixed_f[:min(f.shape[0], 14)] = f[:min(f.shape[0], 14)]
+                        if feature_sizes[i] == 4:
+                            # 4次元から14次元への拡張
+                            fixed_f = torch.zeros(14, device=f.device)
+                            fixed_f[:4] = f  # 最初の4個は元の値を使用
+                            print(f"Fixed feature #{i} from size 4 to 14")
+                        else:
+                            # その他のサイズの場合
+                            fixed_f = torch.zeros(14, device=f.device)
+                            copy_size = min(f.shape[0], 14)
+                            fixed_f[:copy_size] = f[:copy_size]
+                            print(f"Fixed feature #{i} from size {f.shape[0]} to 14")
                         fixed_features.append(fixed_f)
                     else:
                         fixed_features.append(f)
                 superpoint_features = fixed_features
+                print(f"All features fixed to size 14. Total: {len(superpoint_features)} features")
         
         return torch.stack(superpoint_features)  # (N_superpoints, 14)
     
@@ -214,7 +231,7 @@ class ScoreWeightTrainer:
         device = next(self.model.parameters()).device
         lengths = data_dict['lengths']
         
-        ref_length_c = lengths[-1][0].item()
+        ref_length_c = safe_item(lengths[-1][0])
         
         # スコアを確率に変換（sigmoid + temperature）
         temperature = 2.0  # 温度パラメータで確率の鋭さを調整
@@ -268,8 +285,8 @@ class ScoreWeightTrainer:
         feats = data_dict['features'].to(device)
         
         lengths = data_dict['lengths']
-        ref_length_c = lengths[-1][0].item()
-        ref_length_f = lengths[1][0].item()
+        ref_length_c = safe_item(lengths[-1][0])
+        ref_length_f = safe_item(lengths[1][0])
         
         ref_points_c = points_c[:ref_length_c]
         src_points_c = points_c[ref_length_c:]
@@ -342,15 +359,15 @@ class ScoreWeightTrainer:
         # スーパーポイントレベルの点群を更新
         points_c = data_dict['points'][-1].to(device)
         lengths = data_dict['lengths']
-        ref_length_c = lengths[-1][0].item()
+        ref_length_c = safe_item(lengths[-1][0])
         
         # マスクを適用
         combined_mask = torch.cat([ref_mask, src_mask], dim=0)
         selected_points_c = points_c[combined_mask.bool()]
         
         # 新しいlengthsを計算
-        new_ref_length_c = ref_mask.sum().int().item()
-        new_src_length_c = src_mask.sum().int().item()
+        new_ref_length_c = safe_item(ref_mask.sum())
+        new_src_length_c = safe_item(src_mask.sum())
         
         # pointsとlengthsを更新
         new_points_list = masked_data_dict['points'].copy()
@@ -365,7 +382,7 @@ class ScoreWeightTrainer:
         # 特徴量レベルも簡素化して更新
         if 'features' in data_dict:
             features = data_dict['features'].to(device)
-            ref_length_f = lengths[1][0].item()
+            ref_length_f = safe_item(lengths[1][0])
             
             # 簡素化：スーパーポイントレベルでのマスクを特徴量レベルにも適用
             # 実際の実装では、各スーパーポイントに属する特徴量を正確に特定する必要がある
@@ -386,8 +403,8 @@ class ScoreWeightTrainer:
             masked_data_dict['features'] = features[expanded_mask.bool()]
             
             # 特徴量レベルのlengthsも更新
-            new_ref_length_f = ref_feat_mask.sum().int().item()
-            new_src_length_f = src_feat_mask.sum().int().item()
+            new_ref_length_f = safe_item(ref_feat_mask.sum())
+            new_src_length_f = safe_item(src_feat_mask.sum())
             new_lengths[1] = [new_ref_length_f, new_src_length_f]
             masked_data_dict['lengths'] = new_lengths
         
