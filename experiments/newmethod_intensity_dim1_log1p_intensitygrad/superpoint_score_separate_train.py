@@ -51,17 +51,21 @@ class ScoreWeightTrainer:
                 # スコア計算
                 scores = self.score_module(features)
                 mask = (scores > self.score_threshold).squeeze()
+                print(f"mask.sum(): {mask.sum().item()}")
+                print(f"scores[mask][:10]: {scores[mask][:10].detach().cpu().numpy()}")
+                # データdictをマスク済みにしてforward
                 if mask.sum() == 0:
                     continue
-                # データdictをマスク済みにしてforward
                 batch['features'] = ref_feats[mask]
                 batch['points'] = ref_points[mask]
                 # モデルforward
                 output_dict = self.model(batch)
                 loss_dict = self.loss_func(output_dict, batch)
                 loss = loss_dict['loss']
+                print(f"loss: {loss.item()}")
                 self.optimizer.zero_grad()
                 loss.backward()
+                print(f"score_module.weights.grad: {self.score_module.weights.grad}")
                 self.optimizer.step()
                 epoch_loss += loss.item()
                 n_batches += 1
