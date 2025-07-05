@@ -48,6 +48,7 @@ class ScoreWeightTrainer:
                 density = torch.ones(ref_feats.shape[0])
                 intensity_var = torch.var(ref_feats, dim=1) if ref_feats.ndim > 1 else torch.zeros(ref_feats.shape[0])
                 features = normalize_features(torch.stack([density, intensity_var], dim=1), method='minmax')
+                features = features.to(self.score_module.weights.device)  # デバイスをscore_moduleに合わせる
                 # スコア計算
                 scores = self.score_module(features)
                 # ソフト重みづけ: 特徴量にスコア（sigmoidで0-1化）を掛ける
