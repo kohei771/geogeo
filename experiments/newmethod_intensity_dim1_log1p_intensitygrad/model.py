@@ -110,6 +110,13 @@ class GeoTransformer(nn.Module):
         points_f = points_f.to(device)
         points = points.to(device)
         transform = transform.to(device)
+        # 追加: lengths, neighbors, subsampling, upsampling もデバイス統一
+        for k in ['lengths', 'neighbors', 'subsampling', 'upsampling']:
+            if k in data_dict:
+                if isinstance(data_dict[k], list):
+                    data_dict[k] = [v.to(device) for v in data_dict[k]]
+                else:
+                    data_dict[k] = data_dict[k].to(device)
 
         ref_points_c = points_c[:ref_length_c]
         src_points_c = points_c[ref_length_c:]
