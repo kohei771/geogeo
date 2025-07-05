@@ -147,15 +147,30 @@ class SuperPointScoreTrainer:
                 # 空間距離と強度の関係から勾配を計算
                 center_point = points_c[i]
                 distances = torch.norm(neighbor_points - center_point, dim=1)
+                
                 # 距離と強度の相関を勾配として使用
-                intensity_gradient = torch.abs(torch.corrcoef(torch.stack([distances, neighbor_feats.squeeze()]))[0, 1])
-                if torch.isnan(intensity_gradient):
+                try:
+                    stack_tensor = torch.stack([distances, neighbor_feats.squeeze()])
+                    if stack_tensor.shape[1] > 1:  # 相関計算に十分なデータがある
+                        corr_matrix = torch.corrcoef(stack_tensor)
+                        intensity_gradient = torch.abs(corr_matrix[0, 1])
+                        if torch.isnan(intensity_gradient) or torch.isinf(intensity_gradient):
+                            intensity_gradient = torch.tensor(0.0, device=points_c.device)
+                    else:
+                        intensity_gradient = torch.tensor(0.0, device=points_c.device)
+                except:
                     intensity_gradient = torch.tensor(0.0, device=points_c.device)
             else:
                 intensity_gradient = torch.tensor(0.0, device=points_c.device)
             
+            # 特徴量の値を正規化して安定化
+            density_norm = torch.clamp(torch.tensor(density, device=points_c.device, dtype=torch.float32), min=0.0, max=1.0)
+            intensity_var = torch.clamp(intensity_var, min=0.0, max=10.0)
+            intensity_mean = torch.clamp(intensity_mean, min=0.0, max=10.0)
+            intensity_gradient = torch.clamp(intensity_gradient, min=0.0, max=1.0)
+            
             features = torch.stack([
-                torch.tensor(density, device=points_c.device),
+                density_norm,
                 intensity_var,
                 intensity_mean,
                 intensity_gradient
@@ -164,6 +179,34 @@ class SuperPointScoreTrainer:
             superpoint_features.append(features)
         
         return torch.stack(superpoint_features)
+
+    def _handle_nan_inf_scores(self, scores):
+        """
+        スコアのNaN/Infを修正
+        
+        Args:
+            scores: スーパーポイントスコア
+            
+        Returns:
+            修正されたスコア
+        """
+        # NaN/Infをチェック
+        nan_mask = torch.isnan(scores)
+        inf_mask = torch.isinf(scores)
+        
+        if nan_mask.any() or inf_mask.any():
+            print(f"Warning: Found {nan_mask.sum()} NaN and {inf_mask.sum()} Inf values in scores")
+            
+            # NaN/Infを平均値で置き換え
+            valid_scores = scores[~(nan_mask | inf_mask)]
+            if len(valid_scores) > 0:
+                replacement_value = valid_scores.mean()
+            else:
+                replacement_value = torch.tensor(0.0, device=scores.device)
+            
+            scores = torch.where(nan_mask | inf_mask, replacement_value, scores)
+        
+        return scores
 
     def train_epoch(self, epoch):
         """1エポック分のトレーニング"""
@@ -190,6 +233,9 @@ class SuperPointScoreTrainer:
                 
                 # スコアを計算
                 all_scores = self.score_module(superpoint_features)
+                
+                # NaN/Inf チェックと修正
+                all_scores = self._handle_nan_inf_scores(all_scores)
                 
                 # 適応的閾値でソフトマスキング（方針D）
                 masked_data_dict, soft_mask = self._apply_soft_masking(data_dict, all_scores, is_training=True)
@@ -313,8 +359,17 @@ class SuperPointScoreTrainer:
                         src_mask = soft_mask[ref_length:ref_length + src_length]
                         
                         # 有効な長さを計算（ソフトマスクの合計）
-                        effective_ref_length = max(int(ref_mask.sum().item()), 1)
-                        effective_src_length = max(int(src_mask.sum().item()), 1)
+                        ref_sum = ref_mask.sum().item()
+                        src_sum = src_mask.sum().item()
+                        
+                        # NaN/Infチェック
+                        if torch.isnan(torch.tensor(ref_sum)) or torch.isinf(torch.tensor(ref_sum)):
+                            ref_sum = ref_length
+                        if torch.isnan(torch.tensor(src_sum)) or torch.isinf(torch.tensor(src_sum)):
+                            src_sum = src_length
+                        
+                        effective_ref_length = max(int(ref_sum), 1)
+                        effective_src_length = max(int(src_sum), 1)
                         
                         masked_lengths.append([effective_ref_length, effective_src_length])
                     else:
