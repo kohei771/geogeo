@@ -243,11 +243,9 @@ class SuperPointScoreTrainer:
         
         print(f'\n=== Epoch {epoch} Score Weights ===')
         
-        # 重みを取得
-        weights = self.score_module.linear.weight.data.cpu().numpy().flatten()
-        bias = self.score_module.linear.bias.data.cpu().numpy()[0] if self.score_module.linear.bias is not None else 0.0
+        # 重みを取得（SuperPointScoreModuleの実際の構造に合わせて）
+        weights = self.score_module.weights.data.cpu().numpy().flatten()
         
-        print(f'バイアス: {bias:.6f}')
         print('特徴量重み:')
         for i, (name, weight) in enumerate(zip(feature_names, weights)):
             print(f'  {name}: {weight:.6f}')
@@ -258,7 +256,14 @@ class SuperPointScoreTrainer:
         print(f'  標準偏差: {weights.std():.6f}')
         print(f'  最大値: {weights.max():.6f}')
         print(f'  最小値: {weights.min():.6f}')
-        print('=' * 35)
+        
+        # 正規化された重み（相対的な重要度）
+        normalized_weights = weights / (np.sum(np.abs(weights)) + 1e-8)
+        print(f'正規化重み（相対的重要度）:')
+        for i, (name, norm_weight) in enumerate(zip(feature_names, normalized_weights)):
+            print(f'  {name}: {norm_weight:.6f}')
+        
+        print('=' * 40)
 
     def train_epoch(self, epoch):
         """1エポック分のトレーニング"""
