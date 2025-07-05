@@ -72,8 +72,11 @@ class ScoreWeightTrainer:
         self.evaluator = Evaluator(cfg).cuda()
         self.train_loader, self.val_loader, _ = train_valid_data_loader(cfg, distributed=False)
         self.max_epoch = 60   # しっかりと学習（trainval.pyの約1/3）
-        self.max_batches = 400  # より多くのデータで安定した学習
+        self.max_batches = 100  # デバッグのために減らす
         self.score_threshold = getattr(cfg, 'superpoint_score_threshold', 0.5)
+        
+        print(f"Train loader batch size: {getattr(self.train_loader, 'batch_size', 'Unknown')}")
+        print(f"Train dataset length: {len(self.train_loader.dataset) if hasattr(self.train_loader, 'dataset') else 'Unknown'}")
         
         # 学習率スケジューラーを追加
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.5)
@@ -441,10 +444,36 @@ class ScoreWeightTrainer:
                 if batch_count >= self.max_batches:
                     break
                 
+                print(f"\n--- Processing batch {batch_count} ---")
+                
+                # データの基本情報を表示
+                print(f"Data dict keys: {list(data_dict.keys())}")
+                for k, v in data_dict.items():
+                    if isinstance(v, torch.Tensor):
+                        print(f"  {k}: shape={v.shape}, dtype={v.dtype}, device={v.device}")
+                    elif isinstance(v, list):
+                        print(f"  {k}: list with {len(v)} items")
+                        for i, item in enumerate(v[:3]):  # 最初の3つだけ表示
+                            if isinstance(item, torch.Tensor):
+                                print(f"    [{i}]: shape={item.shape}, dtype={item.dtype}")
+                
                 try:
                     # 読み込まれたデータの最初の検証
                     for k, v in data_dict.items():
                         if isinstance(v, torch.Tensor):
+                            # 特別にtransformをチェック
+                            if k == 'transform':
+                                print(f"Transform tensor: shape={v.shape}, dtype={v.dtype}")
+                                print(f"Transform values:\n{v}")
+                                # 変換行列として妥当な値かチェック
+                                if v.shape[-2:] == (4, 4):
+                                    # 回転部分（左上3x3）の行列式をチェック
+                                    rot_matrix = v[..., :3, :3]
+                                    det = torch.det(rot_matrix)
+                                    print(f"Rotation matrix determinant: {det}")
+                                    if torch.abs(det - 1.0) > 0.1:  # 回転行列の行列式は1に近いはず
+                                        print(f"Warning: Invalid rotation matrix determinant: {det}")
+                            
                             if torch.isnan(v).any() or torch.isinf(v).any():
                                 print(f"Warning: Raw data contains invalid values in {k}")
                                 data_dict[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
