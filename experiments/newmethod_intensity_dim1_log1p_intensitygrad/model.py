@@ -16,6 +16,7 @@ from geotransformer.modules.geotransformer import (
 )
 
 from backbone import KPConvFPN
+from geotransformer.utils.superpoint_score import SuperPointScoreModule, normalize_features
 
 
 def compute_intensity_gradient_torch(points, intensity, k=1):
@@ -35,6 +36,15 @@ class GeoTransformer(nn.Module):
         super(GeoTransformer, self).__init__()
         self.num_points_in_patch = cfg.model.num_points_in_patch
         self.matching_radius = cfg.model.ground_truth_matching_radius
+        self.use_superpoint_score = getattr(cfg, 'use_superpoint_score', False)
+        self.superpoint_score_threshold = getattr(cfg, 'superpoint_score_threshold', 0.2)
+        if self.use_superpoint_score:
+            self.score_module = SuperPointScoreModule(num_features=2)
+            # 学習済み重みをロード
+            try:
+                self.score_module.load_state_dict(torch.load('score_weights.pth', map_location='cpu'))
+            except Exception as e:
+                print(f"[Warning] score_weights.pth not loaded: {e}")
 
         self.backbone = KPConvFPN(
             cfg.backbone.input_dim,
