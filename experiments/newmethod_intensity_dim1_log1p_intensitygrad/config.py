@@ -145,13 +145,14 @@ _C.loss.weight_coarse_loss = 1.0
 _C.loss.weight_fine_loss = 1.0
 
 _C.snapshot = 'weights/geotransformer-kitti.pth.tar'
-def make_cfg(use_near=False, use_superpoint_score=False):
+def make_cfg(use_near=False, use_superpoint_score=False, superpoint_score_threshold=0.5):
     cfg = _C.copy()
     # easydictのcopy()はdictになるので、edictに戻す
     from easydict import EasyDict as edict
     cfg = edict(cfg)
     cfg.use_near = use_near
     cfg.use_superpoint_score = use_superpoint_score  # 新手法フラグ追加
+    cfg.superpoint_score_threshold = superpoint_score_threshold  # 閾値追加
     return cfg
 
 
@@ -159,13 +160,17 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--link_output', dest='link_output', action='store_true', help='link output dir')
     parser.add_argument('--near', action='store_true', help='use newmethod_near data/metadata')
+    parser.add_argument('--use_superpoint_score', action='store_true', help='use superpoint score module')
+    parser.add_argument('--superpoint_score_threshold', type=float, default=0.5, help='superpoint score threshold')
     args = parser.parse_args()
     return args
 
 
 def main():
     args = parse_args()
-    cfg = make_cfg(use_near=args.near)
+    cfg = make_cfg(use_near=args.near, 
+                   use_superpoint_score=args.use_superpoint_score,
+                   superpoint_score_threshold=args.superpoint_score_threshold)
     if args.link_output:
         os.symlink(cfg.output_dir, 'output')
 
